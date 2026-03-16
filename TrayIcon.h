@@ -17,10 +17,19 @@ public:
     ~TrayIcon() override;
 
     bool nativeEventFilter(const QByteArray &eventType, void *message, qintptr *result) override;
+    void openSettingsDialog();
+
+    // MainWindow passes in its shared capture tool instance.
+    void setCaptureTool(CaptureTool *tool) { captureTool = tool; }
+
+signals:
+    void settingsUpdated();
+    void clearHistoryRequested();
+    void settingsDialogVisibilityChanged(bool visible);
+    void trayLeftClicked();
 
 private slots:
     void onActivated(QSystemTrayIcon::ActivationReason reason);
-    void showHistory();
     void showSettings();
     void exitApp();
 
@@ -40,5 +49,6 @@ private:
     QAction *settingsAction = nullptr;
     QString captureHotkey = QStringLiteral("Ctrl+Shift+A");
     int hotkeyId = 1001;
+    bool hotkeyRegistered = false;
     CaptureTool *captureTool = nullptr;
 };

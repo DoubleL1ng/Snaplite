@@ -14,8 +14,11 @@ find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Gui)
 
 add_executable(SnipLite
     main.cpp
+    AppSettings.h
     MainWindow.cpp
     MainWindow.h
+    SettingsDialog.cpp
+    SettingsDialog.h
     TrayIcon.cpp
     TrayIcon.h
     CaptureTool.cpp

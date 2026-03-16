@@ -1,16 +1,14 @@
 #include "TrayIcon.h"
+#include "AppSettings.h"
 #include "CaptureTool.h"
+#include "SettingsDialog.h"
 
 #include <QAction>
 #include <QApplication>
-#include <QClipboard>
+#include <QCoreApplication>
 #include <QDialog>
-#include <QDialogButtonBox>
-#include <QFormLayout>
-#include <QGuiApplication>
+#include <QDir>
 #include <QIcon>
-#include <QKeySequenceEdit>
-#include <QLabel>
 #include <QMenu>
 #include <QSettings>
 #include <QStyle>
@@ -19,29 +17,35 @@
 #include <windows.h>
 #endif
 
-TrayIcon::TrayIcon(QObject *parent)
-    : QObject(parent)
+namespace {
+#ifdef Q_OS_WIN
+constexpr auto kAutoStartRegPath = "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+constexpr auto kAutoStartValueName = "SnipLite";
+#endif
+} // namespace
+
+TrayIcon::TrayIcon(QObject *parent) : QObject(parent)
 {
     QIcon icon = QIcon::fromTheme("camera-photo");
     if (icon.isNull()) {
         icon = QApplication::style()->standardIcon(QStyle::SP_ComputerIcon);
     }
 
-    captureTool = new CaptureTool(this);
-    connect(captureTool, &CaptureTool::screenshotTaken, this, [](const QPixmap &pixmap) {
-        QGuiApplication::clipboard()->setPixmap(pixmap);
-    });
-
     loadSettings();
 
     trayIcon = new QSystemTrayIcon(icon, this);
     createTrayMenu();
-    trayIcon->setContextMenu(trayMenu);
     connect(trayIcon, &QSystemTrayIcon::activated, this, &TrayIcon::onActivated);
     trayIcon->show();
 
     qApp->installNativeEventFilter(this);
-    applyCaptureHotkey(QKeySequence::fromString(captureHotkey, QKeySequence::PortableText));
+
+    QKeySequence configuredHotkey =
+        QKeySequence::fromString(captureHotkey, QKeySequence::PortableText);
+    if (!applyCaptureHotkey(configuredHotkey)) {
+        const QKeySequence fallbackHotkey(AppSettings::kDefaultCaptureHotkey);
+        applyCaptureHotkey(fallbackHotkey);
+    }
 }
 
 TrayIcon::~TrayIcon()
@@ -55,170 +59,129 @@ TrayIcon::~TrayIcon()
 void TrayIcon::createTrayMenu()
 {
     trayMenu = new QMenu();
-
-    QAction *startAction = trayMenu->addAction(QStringLiteral("\u65b0\u5efa\u622a\u56fe"));
-    QAction *fullAction = trayMenu->addAction(QStringLiteral("\u5168\u5c4f\u622a\u56fe"));
-    QAction *windowAction = trayMenu->addAction(QStringLiteral("\u7a97\u53e3\u622a\u56fe"));
-    QAction *regionAction = trayMenu->addAction(QStringLiteral("\u533a\u57df\u622a\u56fe"));
-    QAction *longAction = trayMenu->addAction(QStringLiteral("\u957f\u622a\u56fe"));
-
-    trayMenu->addSeparator();
     settingsAction = trayMenu->addAction(QStringLiteral("\u8bbe\u7f6e"));
-    QAction *historyAction = trayMenu->addAction(QStringLiteral("\u5386\u53f2\u622a\u56fe"));
-    trayMenu->addSeparator();
     QAction *exitAction = trayMenu->addAction(QStringLiteral("\u9000\u51fa"));
 
-    connect(startAction, &QAction::triggered, this, [this]() {
-        if (captureTool) {
-            captureTool->startCapture();
-        }
-    });
-    connect(fullAction, &QAction::triggered, this, [this]() {
-        if (captureTool) {
-            captureTool->captureFullScreen();
-        }
-    });
-    connect(windowAction, &QAction::triggered, this, [this]() {
-        if (captureTool) {
-            captureTool->captureWindow();
-        }
-    });
-    connect(regionAction, &QAction::triggered, this, [this]() {
-        if (captureTool) {
-            captureTool->captureRegion();
-        }
-    });
-    connect(longAction, &QAction::triggered, this, [this]() {
-        if (captureTool) {
-            captureTool->captureLongScreenshot();
-        }
-    });
-    connect(historyAction, &QAction::triggered, this, &TrayIcon::showHistory);
-    connect(settingsAction, &QAction::triggered, this, &TrayIcon::showSettings);
+    connect(settingsAction, &QAction::triggered, this, &TrayIcon::openSettingsDialog);
     connect(exitAction, &QAction::triggered, this, &TrayIcon::exitApp);
 
-    if (settingsAction) {
-        settingsAction->setText(
-            QStringLiteral("\u8bbe\u7f6e\uff08\u622a\u56fe\u5feb\u6377\u952e\uff1a%1\uff09").arg(captureHotkey));
-    }
+    trayIcon->setContextMenu(trayMenu);
 }
+
+void TrayIcon::openSettingsDialog() { showSettings(); }
 
 void TrayIcon::onActivated(QSystemTrayIcon::ActivationReason reason)
 {
     if (reason == QSystemTrayIcon::Trigger) {
-        if (captureTool) {
-            captureTool->startCapture();
-        }
-    }
-}
-
-void TrayIcon::showHistory()
-{
-    if (trayIcon) {
-        trayIcon->showMessage(
-            QStringLiteral("\u5386\u53f2\u622a\u56fe"),
-            QStringLiteral("\u8fd9\u4e2a\u529f\u80fd\u8fd8\u5728\u5f00\u53d1\u4e2d\u3002"),
-            QSystemTrayIcon::Information,
-            2200);
+        emit trayLeftClicked();
     }
 }
 
 void TrayIcon::showSettings()
 {
-    QDialog dialog;
-    dialog.setWindowTitle(QStringLiteral("\u5feb\u6377\u952e\u8bbe\u7f6e"));
-    dialog.setModal(true);
+    SettingsDialog dialog;
+    emit settingsDialogVisibilityChanged(true);
+    const int dialogResult = dialog.exec();
+    emit settingsDialogVisibilityChanged(false);
 
-    QFormLayout *layout = new QFormLayout(&dialog);
-    QKeySequenceEdit *hotkeyEdit = new QKeySequenceEdit(
-        QKeySequence::fromString(captureHotkey, QKeySequence::PortableText), &dialog);
-    QLabel *hintLabel = new QLabel(
-        QStringLiteral("\u5efa\u8bae\u4f7f\u7528 Ctrl/Alt/Shift \u7ec4\u5408\u952e\uff0c\u4f8b\u5982 Ctrl+Shift+A\u3002"),
-        &dialog);
-    hintLabel->setWordWrap(true);
-
-    layout->addRow(QStringLiteral("\u622a\u56fe\u5feb\u6377\u952e"), hotkeyEdit);
-    layout->addRow(hintLabel);
-
-    QDialogButtonBox *buttonBox =
-        new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
-    layout->addWidget(buttonBox);
-
-    connect(buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
-    connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-
-    if (dialog.exec() != QDialog::Accepted) {
+    if (dialogResult != QDialog::Accepted) {
         return;
     }
 
-    QKeySequence sequence = hotkeyEdit->keySequence();
-    if (sequence.isEmpty()) {
-        sequence = QKeySequence(QStringLiteral("Ctrl+Shift+A"));
+    const bool hotkeyApplied = applyCaptureHotkey(dialog.captureHotkey());
+
+    QSettings settings = AppSettings::createSettings();
+    settings.setValue(AppSettings::kCaptureHotkey, captureHotkey);
+    settings.setValue(AppSettings::kSavePath, dialog.savePath());
+    settings.setValue(AppSettings::kSaveFormat, dialog.saveFormat());
+    settings.setValue(AppSettings::kHideSidebar, dialog.hideSidebar());
+    settings.setValue(AppSettings::kHistoryMaxItems, dialog.historyMaxItems());
+
+#ifdef Q_OS_WIN
+    QSettings bootSettings(QString::fromLatin1(kAutoStartRegPath), QSettings::NativeFormat);
+    if (dialog.autoStartEnabled()) {
+        QString appPath = QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
+        bootSettings.setValue(QString::fromLatin1(kAutoStartValueName), "\"" + appPath + "\"");
+    } else {
+        bootSettings.remove(QString::fromLatin1(kAutoStartValueName));
+    }
+#endif
+
+    emit settingsUpdated();
+    if (dialog.shouldClearHistory()) {
+        emit clearHistoryRequested();
     }
 
-    if (!applyCaptureHotkey(sequence)) {
-        if (trayIcon) {
-            trayIcon->showMessage(
-                QStringLiteral("\u5feb\u6377\u952e\u8bbe\u7f6e"),
-                QStringLiteral("\u5feb\u6377\u952e\u6ce8\u518c\u5931\u8d25\uff0c\u8bf7\u6362\u4e00\u4e2a\u7ec4\u5408\u952e\u3002"),
-                QSystemTrayIcon::Warning,
-                2800);
-        }
-        return;
-    }
-
-    QSettings settings(QStringLiteral("SnipLite"), QStringLiteral("SnipLite"));
-    settings.setValue(QStringLiteral("shortcuts/capture"), captureHotkey);
-
-    if (trayIcon) {
+    if (!hotkeyApplied && trayIcon) {
         trayIcon->showMessage(
-            QStringLiteral("\u5feb\u6377\u952e\u8bbe\u7f6e"),
-            QStringLiteral("\u622a\u56fe\u5feb\u6377\u952e\u5df2\u66f4\u65b0\u4e3a %1")
-                .arg(sequence.toString(QKeySequence::NativeText)),
-            QSystemTrayIcon::Information,
-            2200);
+            QStringLiteral("\u8bbe\u7f6e"),
+            QStringLiteral("\u65b0\u5feb\u6377\u952e\u4e0d\u53ef\u7528\uff0c\u5df2\u4fdd\u7559\u65e7\u5feb\u6377\u952e\uff0c\u5176\u4ed6\u8bbe\u7f6e\u5df2\u751f\u6548\u3002"),
+            QSystemTrayIcon::Warning,
+            3000);
     }
 }
 
-void TrayIcon::exitApp()
-{
-    QApplication::quit();
-}
+void TrayIcon::exitApp() { QApplication::quit(); }
 
 void TrayIcon::loadSettings()
 {
-    QSettings settings(QStringLiteral("SnipLite"), QStringLiteral("SnipLite"));
+    QSettings settings = AppSettings::createSettings();
     captureHotkey =
-        settings.value(QStringLiteral("shortcuts/capture"), QStringLiteral("Ctrl+Shift+A")).toString();
+        settings.value(AppSettings::kCaptureHotkey, AppSettings::kDefaultCaptureHotkey).toString();
     if (captureHotkey.isEmpty()) {
-        captureHotkey = QStringLiteral("Ctrl+Shift+A");
+        captureHotkey = AppSettings::kDefaultCaptureHotkey;
     }
 }
 
 bool TrayIcon::applyCaptureHotkey(const QKeySequence &sequence)
 {
+    QKeySequence targetSequence = sequence;
+    if (targetSequence.isEmpty()) {
+        targetSequence = QKeySequence(AppSettings::kDefaultCaptureHotkey);
+    }
+
 #ifdef Q_OS_WIN
-    if (!registerHotkey(sequence)) {
+    const QString targetText = targetSequence.toString(QKeySequence::PortableText);
+    if (hotkeyRegistered && targetText == captureHotkey) {
+        return true;
+    }
+
+    unsigned int modifiers = 0;
+    unsigned int virtualKey = 0;
+    if (!parseHotkey(targetSequence, modifiers, virtualKey) || modifiers == 0 || virtualKey == 0) {
         return false;
     }
 
-    unregisterHotkey();
-    unsigned int modifiers = 0;
-    unsigned int virtualKey = 0;
-    parseHotkey(sequence, modifiers, virtualKey);
-    RegisterHotKey(nullptr, hotkeyId, modifiers, virtualKey);
-#else
-    Q_UNUSED(sequence);
-#endif
+    const int probeHotkeyId = hotkeyId + 1;
+    if (RegisterHotKey(nullptr, probeHotkeyId, modifiers, virtualKey) == 0) {
+        return false;
+    }
+    UnregisterHotKey(nullptr, probeHotkeyId);
 
-    captureHotkey = sequence.toString(QKeySequence::PortableText);
-    if (captureHotkey.isEmpty()) {
-        captureHotkey = QStringLiteral("Ctrl+Shift+A");
+    const QKeySequence oldSequence =
+        QKeySequence::fromString(captureHotkey, QKeySequence::PortableText);
+
+    unregisterHotkey();
+    if (RegisterHotKey(nullptr, hotkeyId, modifiers, virtualKey) == 0) {
+        unsigned int oldModifiers = 0;
+        unsigned int oldVirtualKey = 0;
+        if (parseHotkey(oldSequence, oldModifiers, oldVirtualKey) && oldModifiers != 0 &&
+            oldVirtualKey != 0) {
+            if (RegisterHotKey(nullptr, hotkeyId, oldModifiers, oldVirtualKey) != 0) {
+                hotkeyRegistered = true;
+            }
+        }
+        return false;
     }
 
-    if (settingsAction) {
-        settingsAction->setText(
-            QStringLiteral("\u8bbe\u7f6e\uff08\u622a\u56fe\u5feb\u6377\u952e\uff1a%1\uff09").arg(captureHotkey));
+    hotkeyRegistered = true;
+#else
+    Q_UNUSED(targetSequence);
+#endif
+
+    captureHotkey = targetSequence.toString(QKeySequence::PortableText);
+    if (captureHotkey.isEmpty()) {
+        captureHotkey = AppSettings::kDefaultCaptureHotkey;
     }
 
     return true;
@@ -243,6 +206,7 @@ bool TrayIcon::nativeEventFilter(const QByteArray &eventType, void *message, qin
     Q_UNUSED(message);
     Q_UNUSED(result);
 #endif
+
     return false;
 }
 
@@ -251,34 +215,31 @@ bool TrayIcon::registerHotkey(const QKeySequence &sequence)
 {
     unsigned int modifiers = 0;
     unsigned int virtualKey = 0;
-    if (!parseHotkey(sequence, modifiers, virtualKey)) {
+    if (!parseHotkey(sequence, modifiers, virtualKey) || modifiers == 0 || virtualKey == 0) {
         return false;
     }
 
-    if (modifiers == 0 || virtualKey == 0) {
+    if (RegisterHotKey(nullptr, hotkeyId, modifiers, virtualKey) == 0) {
         return false;
     }
 
-    int testId = hotkeyId + 1;
-    if (RegisterHotKey(nullptr, testId, modifiers, virtualKey)) {
-        UnregisterHotKey(nullptr, testId);
-        return true;
-    }
-
-    return false;
+    hotkeyRegistered = true;
+    return true;
 }
 
 void TrayIcon::unregisterHotkey()
 {
+    if (!hotkeyRegistered) {
+        return;
+    }
     UnregisterHotKey(nullptr, hotkeyId);
+    hotkeyRegistered = false;
 }
 
-bool TrayIcon::parseHotkey(
-    const QKeySequence &sequence, unsigned int &modifiers, unsigned int &virtualKey) const
+bool TrayIcon::parseHotkey(const QKeySequence &sequence, unsigned int &modifiers, unsigned int &virtualKey) const
 {
     modifiers = 0;
     virtualKey = 0;
-
     if (sequence.count() < 1) {
         return false;
     }
@@ -290,7 +251,6 @@ bool TrayIcon::parseHotkey(
     if (combo.key() == Qt::Key_unknown) {
         return false;
     }
-
     if (qtMods.testFlag(Qt::ControlModifier)) {
         modifiers |= MOD_CONTROL;
     }
@@ -342,7 +302,6 @@ bool TrayIcon::parseHotkey(
     default:
         break;
     }
-
     return false;
 }
 #endif

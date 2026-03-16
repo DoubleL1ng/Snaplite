@@ -1,30 +1,25 @@
 #include "CaptureTool.h"
+
+#include "AppSettings.h"
+
 #include <QCursor>
+#include <QDateTime>
 #include <QDialog>
 #include <QDialogButtonBox>
-#include <QEvent>
+#include <QDir>
+#include <QFileInfo>
 #include <QGuiApplication>
-#include <QKeyEvent>
 #include <QLabel>
+#include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPushButton>
 #include <QScreen>
+#include <QSettings>
 #include <QVBoxLayout>
-#include <QtGlobal>
 #include <QWidget>
-#include <QMenu>
-#include <QAction>
+#include <QtGlobal>
 
-#ifdef Q_OS_WIN
-#include <windows.h>
-#include <dwmapi.h>
-#ifndef DWMWA_EXTENDED_FRAME_BOUNDS
-#define DWMWA_EXTENDED_FRAME_BOUNDS 9
-#endif
-#endif
-
-// --- 1. 截图预览对话框 ---
 class CapturePreviewDialog : public QDialog {
 public:
     explicit CapturePreviewDialog(const QPixmap &pixmap, QWidget *parent = nullptr) : QDialog(parent) {
@@ -32,14 +27,15 @@ public:
         setWindowFlags(windowFlags() | Qt::WindowStaysOnTopHint);
         setModal(true);
         resize(760, 520);
-
         QVBoxLayout *layout = new QVBoxLayout(this);
         QLabel *previewLabel = new QLabel(this);
         previewLabel->setAlignment(Qt::AlignCenter);
+        previewLabel->setMinimumSize(480, 280);
         previewLabel->setPixmap(pixmap.scaled(720, 420, Qt::KeepAspectRatio, Qt::SmoothTransformation));
         layout->addWidget(previewLabel, 1);
 
         QDialogButtonBox *buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+        saveButton_ = buttonBox->addButton(QStringLiteral("\u4fdd\u5b58"), QDialogButtonBox::ActionRole);
         buttonBox->button(QDialogButtonBox::Ok)->setText(QStringLiteral("\u5b8c\u6210"));
         buttonBox->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("\u53d6\u6d88"));
         layout->addWidget(buttonBox);
@@ -47,218 +43,232 @@ public:
         connect(buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
         connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
     }
-};
 
-// --- 2. 长截图预览挂件 ---
-class LongshotPreview : public QWidget {
-public:
-    explicit LongshotPreview(CaptureTool *tool) : QWidget(nullptr), tool(tool) {
-        setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
-        setAttribute(Qt::WA_TranslucentBackground);
-        setAttribute(Qt::WA_DeleteOnClose);
-        setFocusPolicy(Qt::StrongFocus);
-        resize(180, 240);
-        QScreen *screen = QGuiApplication::primaryScreen();
-        if (screen) move(screen->geometry().right() - 200, 40);
-    }
-
-protected:
-    void paintEvent(QPaintEvent *) override {
-        QPainter p(this);
-        p.setRenderHint(QPainter::SmoothPixmapTransform);
-        p.setBrush(QColor(255, 255, 255, 220));
-        p.setPen(Qt::NoPen);
-        p.drawRoundedRect(rect(), 12, 12);
-        p.setPen(QColor(40, 40, 40));
-        p.drawText(QRect(12, 12, width() - 24, 20), Qt::AlignCenter, QStringLiteral("\u957f\u622a\u56fe"));
-
-        if (!tool->longshotSegments.isEmpty()) {
-            int w = width() - 24, y = 38;
-            for (const QImage &img : tool->longshotSegments) {
-                if (img.width() <= 0) continue;
-                QPixmap pm = QPixmap::fromImage(img).scaled(w, img.height() * w / img.width(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
-                p.drawPixmap(12, y, pm);
-                y += pm.height() + 4;
-                if (y > height() - 48) break;
-            }
-        }
-        QRect btnRect(width() - 70, height() - 38, 60, 28);
-        p.setBrush(QColor(0, 122, 255));
-        p.drawRoundedRect(btnRect, 8, 8);
-        p.setPen(Qt::white);
-        p.drawText(btnRect, Qt::AlignCenter, QStringLiteral("\u5b8c\u6210"));
-    }
-
-    void mousePressEvent(QMouseEvent *e) override {
-        QRect btnRect(width() - 70, height() - 38, 60, 28);
-        if (btnRect.contains(e->pos())) { tool->finishLongshot(); close(); }
-    }
-private:
-    CaptureTool *tool;
-};
-
-// --- 3. 窗口选择器 ---
-class WindowSelector : public QWidget {
-public:
-    explicit WindowSelector(CaptureTool *tool) : QWidget(nullptr), tool(tool) {
-        setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
-        setAttribute(Qt::WA_TranslucentBackground);
-        setWindowState(Qt::WindowFullScreen);
-        setMouseTracking(true);
-    }
-
-protected:
-    void paintEvent(QPaintEvent *) override {
-        QPainter p(this);
-        p.setBrush(QColor(0, 0, 0, 50));
-        p.drawRect(rect());
-        if (highlightRect.isValid()) {
-            p.setPen(QPen(Qt::red, 3));
-            p.setBrush(Qt::NoBrush);
-            p.drawRect(highlightRect);
-        }
-    }
-
-    void mouseMoveEvent(QMouseEvent *e) override {
-#ifdef Q_OS_WIN
-        POINT pt = { static_cast<LONG>(e->globalPosition().x()), static_cast<LONG>(e->globalPosition().y()) };
-        HWND hwnd = WindowFromPoint(pt);
-        if (hwnd) {
-            hwnd = GetAncestor(hwnd, GA_ROOT);
-            RECT rc;
-            if (SUCCEEDED(DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &rc, sizeof(rc)))) {
-                highlightRect = QRect(rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top);
-                update();
-            }
-        }
-#endif
-    }
-
-    void mousePressEvent(QMouseEvent *) override {
-        if (highlightRect.isValid()) {
-            this->hide();
-            QGuiApplication::processEvents();
-            tool->captureWindowRegion(highlightRect);
-            this->close();
-        }
-    }
+    QPushButton *saveButton() const { return saveButton_; }
 
 private:
-    CaptureTool *tool;
-    QRect highlightRect;
+    QPushButton *saveButton_ = nullptr;
 };
 
-// --- 4. 区域选择器 ---
 class SelectionOverlay : public QWidget {
 public:
     explicit SelectionOverlay(CaptureTool *tool) : QWidget(nullptr), tool(tool) {
         setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
-        setAttribute(Qt::WA_TranslucentBackground);
+        setAttribute(Qt::WA_OpaquePaintEvent);
+        setAttribute(Qt::WA_DeleteOnClose);
         setWindowState(Qt::WindowFullScreen);
         setCursor(Qt::CrossCursor);
     }
 protected:
     void paintEvent(QPaintEvent *) override {
         QPainter p(this);
-        p.setBrush(QColor(0, 0, 0, 80));
-        p.drawRect(rect());
+        if (!tool->frozenScreen.isNull()) {
+            // frozenScreen is captured in physical pixels; draw it scaled to logical widget rect.
+            p.drawPixmap(rect(), tool->frozenScreen);
+        } else {
+            p.fillRect(rect(), Qt::black);
+        }
+
+        p.fillRect(rect(), QColor(0, 0, 0, 80));
+
         if (tool->selecting) {
-            p.setPen(QPen(Qt::blue, 2));
-            p.drawRect(QRect(tool->selectionStart, tool->selectionEnd).normalized());
+            const QRect sel = QRect(tool->selectionStart, tool->selectionEnd).normalized();
+            if (!sel.isEmpty()) {
+                if (!tool->frozenScreen.isNull()) {
+                    // Re-draw the same frozen frame under clip to avoid high-DPI remap jitter.
+                    p.save();
+                    p.setClipRect(sel);
+                    p.drawPixmap(rect(), tool->frozenScreen);
+                    p.restore();
+                }
+                p.setBrush(Qt::NoBrush);
+                p.setPen(QPen(QColor(0, 122, 255), 2));
+                p.drawRect(sel.adjusted(0, 0, -1, -1));
+            }
         }
     }
-    void mousePressEvent(QMouseEvent *e) {
+    void mousePressEvent(QMouseEvent *e) override {
         tool->selecting = true;
         tool->selectionStart = tool->selectionEnd = e->globalPosition().toPoint();
+        update();
     }
-    void mouseMoveEvent(QMouseEvent *e) {
-        if (tool->selecting) { tool->selectionEnd = e->globalPosition().toPoint(); update(); }
+    void mouseMoveEvent(QMouseEvent *e) override {
+        if (tool->selecting) {
+            tool->selectionEnd = e->globalPosition().toPoint();
+            update();
+        }
     }
-    void mouseReleaseEvent(QMouseEvent *) {
-        this->hide();
-        QGuiApplication::processEvents();
-        tool->finishSelection();
+    void mouseReleaseEvent(QMouseEvent *e) override {
+        if (tool->selecting) {
+            tool->selectionEnd = e->globalPosition().toPoint();
+            tool->finishSelection();
+        }
     }
 private:
     CaptureTool *tool;
 };
 
-// --- 5. CaptureTool 成员实现 ---
-CaptureTool::CaptureTool(QObject *parent) : QObject(parent), overlay(nullptr), selecting(false), longshotPreview(nullptr), longshotMode(false) {}
+CaptureTool::CaptureTool(QObject *parent) : QObject(parent), overlay(nullptr), selecting(false) {}
 
-void CaptureTool::startCapture() { captureWindow(); }
+// 直接启动区域截图
+void CaptureTool::startCapture() { captureRegion(); }
 
 void CaptureTool::captureFullScreen() {
     QScreen *s = QGuiApplication::primaryScreen();
     if (s) confirmAndEmit(s->grabWindow(0));
 }
 
-void CaptureTool::captureWindow() { (new WindowSelector(this))->show(); }
-
 void CaptureTool::captureRegion() {
-    if (overlay) overlay->close();
+    QScreen *screen = QGuiApplication::primaryScreen();
+    if (!screen) {
+        return;
+    }
+
+    frozenScreen = screen->grabWindow(0);
+    if (frozenScreen.isNull()) {
+        return;
+    }
+
+    if (overlay) { overlay->close(); overlay = nullptr; }
+    selecting = false;
+
+    if (!regionCaptureActive) {
+        regionCaptureActive = true;
+        emit regionCaptureStateChanged(true);
+    }
+
     overlay = new SelectionOverlay(this);
+    connect(overlay, &QWidget::destroyed, this, [this]() {
+        overlay = nullptr;
+        selecting = false;
+        if (regionCaptureActive) {
+            regionCaptureActive = false;
+            emit regionCaptureStateChanged(false);
+        }
+    });
     overlay->show();
 }
 
-void CaptureTool::captureWindowRegion(const QRect &rect) {
-    QScreen *screen = QGuiApplication::primaryScreen();
-    if (!screen) return;
-    if (longshotMode) {
-        longshotRect = rect;
-        QImage img = screen->grabWindow(0, rect.x(), rect.y(), rect.width(), rect.height()).toImage();
-        if (!img.isNull()) { longshotSegments.append(img); updateLongshotPreview(); }
-    } else {
-        confirmAndEmit(screen->grabWindow(0, rect.x(), rect.y(), rect.width(), rect.height()));
-    }
-}
-
 void CaptureTool::finishSelection() {
+    if (!overlay) {
+        frozenScreen = QPixmap();
+        return;
+    }
+
     QRect selRect = QRect(selectionStart, selectionEnd).normalized();
-    if (overlay) { overlay->close(); overlay = nullptr; }
+    overlay->close();
+    overlay = nullptr;
     selecting = false;
-    if (selRect.width() < 5 || selRect.height() < 5) return;
-    QScreen *s = QGuiApplication::primaryScreen();
-    if (s) confirmAndEmit(s->grabWindow(0, selRect.x(), selRect.y(), selRect.width(), selRect.height()));
-}
 
-void CaptureTool::captureLongScreenshot() {
-    longshotMode = true; longshotSegments.clear();
-    WindowSelector *selector = new WindowSelector(this);
-    connect(selector, &QWidget::destroyed, this, [this]() {
-        // 关键修复：使用 CaptureTool 成员变量 longshotRect
-        if (longshotMode && longshotRect.isValid()) showLongshotPreview();
-    });
-    selector->show();
-}
+    if (selRect.width() < 10 || selRect.height() < 10) {
+        frozenScreen = QPixmap();
+        return;
+    }
 
-void CaptureTool::showLongshotPreview() {
-    longshotPreview = new LongshotPreview(this);
-    longshotPreview->show();
-    captureWindowRegion(longshotRect);
-}
+    QPixmap pixmap;
+    if (!frozenScreen.isNull()) {
+        const qreal dpr = frozenScreen.devicePixelRatio();
+        QRect sourceRect = selRect;
+        if (!qFuzzyCompare(dpr, 1.0)) {
+            sourceRect = QRect(qRound(selRect.x() * dpr),
+                               qRound(selRect.y() * dpr),
+                               qRound(selRect.width() * dpr),
+                               qRound(selRect.height() * dpr));
+        }
 
-void CaptureTool::finishLongshot() {
-    if (longshotSegments.isEmpty()) return;
-    int w = longshotSegments.first().width(), h = 0;
-    for (const QImage &img : longshotSegments) h += img.height();
-    QImage res(w, h, QImage::Format_ARGB32);
-    QPainter p(&res);
-    int currY = 0;
-    for (const QImage &img : longshotSegments) { p.drawImage(0, currY, img); currY += img.height(); }
-    p.end();
-    confirmAndEmit(QPixmap::fromImage(res));
-    clearLongshot();
-}
+        sourceRect = sourceRect.intersected(QRect(QPoint(0, 0), frozenScreen.size()));
+        if (sourceRect.isValid() && sourceRect.width() > 0 && sourceRect.height() > 0) {
+            pixmap = frozenScreen.copy(sourceRect);
+            pixmap.setDevicePixelRatio(dpr);
+        }
+    }
 
-void CaptureTool::clearLongshot() { longshotSegments.clear(); longshotMode = false; }
+    frozenScreen = QPixmap();
+    if (!pixmap.isNull()) confirmAndEmit(pixmap);
+}
 
 void CaptureTool::confirmAndEmit(const QPixmap &pixmap) {
     if (pixmap.isNull()) return;
-    CapturePreviewDialog dlg(pixmap);
-    if (dlg.exec() == QDialog::Accepted) emit screenshotTaken(pixmap);
+
+    CapturePreviewDialog dialog(pixmap);
+    emit previewDialogStateChanged(true);
+    connect(dialog.saveButton(), &QPushButton::clicked, &dialog, [this, &pixmap, &dialog]() {
+        QString savedPath;
+        QString errorText;
+        if (savePixmapToConfiguredPath(pixmap, &savedPath, &errorText)) {
+            QMessageBox::information(&dialog,
+                                     QStringLiteral("\u622a\u56fe\u5df2\u4fdd\u5b58"),
+                                     QStringLiteral("\u5df2\u4fdd\u5b58\u5230\uff1a\n%1")
+                                         .arg(QDir::toNativeSeparators(savedPath)));
+        } else {
+            QMessageBox::warning(&dialog,
+                                 QStringLiteral("\u4fdd\u5b58\u5931\u8d25"),
+                                 errorText.isEmpty()
+                                     ? QStringLiteral("\u65e0\u6cd5\u4fdd\u5b58\u622a\u56fe\u6587\u4ef6\u3002")
+                                     : errorText);
+        }
+    });
+
+    const int result = dialog.exec();
+    emit previewDialogStateChanged(false);
+    if (result == QDialog::Accepted) emit screenshotTaken(pixmap);
 }
 
-void CaptureTool::updateLongshotPreview() { if (longshotPreview) longshotPreview->update(); }
+bool CaptureTool::savePixmapToConfiguredPath(const QPixmap &pixmap,
+                                             QString *savedPath,
+                                             QString *errorText) const
+{
+    if (pixmap.isNull()) {
+        if (errorText) {
+            *errorText = QStringLiteral("\u622a\u56fe\u6570\u636e\u4e3a\u7a7a\u3002");
+        }
+        return false;
+    }
 
-bool CaptureTool::eventFilter(QObject *obj, QEvent *event) { return QObject::eventFilter(obj, event); }
+    QSettings settings = AppSettings::createSettings();
+    const QString dirPath = AppSettings::normalizeSavePath(
+        settings.value(AppSettings::kSavePath, AppSettings::defaultSavePath()).toString());
+
+    QDir dir(dirPath);
+    if (!dir.exists() && !dir.mkpath(QStringLiteral("."))) {
+        if (errorText) {
+            *errorText = QStringLiteral("\u4fdd\u5b58\u76ee\u5f55\u4e0d\u5b58\u5728\u4e14\u65e0\u6cd5\u521b\u5efa\uff1a\n%1")
+                             .arg(QDir::toNativeSeparators(dirPath));
+        }
+        return false;
+    }
+
+    const QString format = AppSettings::normalizeSaveFormat(
+        settings.value(AppSettings::kSaveFormat, AppSettings::kDefaultSaveFormat).toString());
+    const QString extension =
+        (format == QStringLiteral("JPG")) ? QStringLiteral("jpg") : QStringLiteral("png");
+
+    const QString timestamp =
+        QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss_zzz"));
+    const QString baseName = QStringLiteral("SnipLite_%1").arg(timestamp);
+
+    QString filePath =
+        dir.filePath(QStringLiteral("%1.%2").arg(baseName, extension));
+    int suffix = 1;
+    while (QFileInfo::exists(filePath)) {
+        filePath = dir.filePath(
+            QStringLiteral("%1_%2.%3").arg(baseName).arg(suffix++).arg(extension));
+    }
+
+    const QByteArray formatBytes = format.toLatin1();
+    if (!pixmap.save(filePath, formatBytes.constData())) {
+        if (errorText) {
+            *errorText = QStringLiteral("\u5199\u5165\u6587\u4ef6\u5931\u8d25\uff1a\n%1")
+                             .arg(QDir::toNativeSeparators(filePath));
+        }
+        return false;
+    }
+
+    if (savedPath) {
+        *savedPath = filePath;
+    }
+    if (errorText) {
+        errorText->clear();
+    }
+    return true;
+}
