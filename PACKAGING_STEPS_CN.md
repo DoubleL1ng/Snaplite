@@ -1,7 +1,7 @@
-# SnipLite 打包步骤（Qt Creator 新手版）
+# Words-Bin 打包步骤（Qt Creator 新手版）
 
 本文档目标：
-- 编译出 Release 版本的 SnipLite.exe
+- 编译出 Release 版本的 Words-Bin.exe
 - 使用 windeployqt 补齐 Qt 运行库
 - 使用 Inno Setup 生成安装包 Setup.exe
 
@@ -31,21 +31,21 @@
 
 1. 左下角 Build Configuration 切到 `Release`
 2. 点击 Build（锤子图标）
-3. 编译成功后，在构建目录中找到 `SnipLite.exe`
+3. 编译成功后，在构建目录中找到 `Words-Bin.exe`
 
 Qt Creator 中可通过 Projects 页面查看具体 Build Directory。
 
 ## 4. 用 windeployqt 收集运行库（关键步骤）
 
-`SnipLite.exe` 不能单独发送给别人，必须带上 Qt 依赖库。
+`Words-Bin.exe` 不能单独发送给别人，必须带上 Qt 依赖库。
 
 方法：
 1. 打开“x64 Native Tools Command Prompt for VS 2022”
-2. 进入 `SnipLite.exe` 所在目录
+2. 进入 `Words-Bin.exe` 所在目录
 3. 执行命令（将路径替换为你本机 Qt 安装路径）：
 
 ```bat
-C:\Qt\6.8.0\msvc2022_64\bin\windeployqt.exe --release --compiler-runtime SnipLite.exe
+C:\Qt\6.8.0\msvc2022_64\bin\windeployqt.exe --release --compiler-runtime Words-Bin.exe
 ```
 
 执行后，当前目录会出现：
@@ -57,8 +57,8 @@ C:\Qt\6.8.0\msvc2022_64\bin\windeployqt.exe --release --compiler-runtime SnipLit
 
 ## 5. 先做绿色版验证（强烈建议）
 
-1. 新建一个干净目录，例如 `D:\dist\SnipLite`
-2. 把 `SnipLite.exe` 和 windeployqt 生成的所有文件复制进去
+1. 新建一个干净目录，例如 `D:\dist\Words-Bin`
+2. 把 `Words-Bin.exe` 和 windeployqt 生成的所有文件复制进去
 3. 在本机直接运行一次，确认程序可以启动
 4. 最好在另一台未安装 Qt 的机器测试
 
@@ -71,10 +71,10 @@ C:\Qt\6.8.0\msvc2022_64\bin\windeployqt.exe --release --compiler-runtime SnipLit
 打开 Inno Setup，新建一个 `.iss` 脚本，示例：
 
 ```iss
-#define MyAppName "SnipLite"
+#define MyAppName "Words-Bin"
 #define MyAppVersion "0.1.0"
 #define MyAppPublisher "YourName"
-#define MyAppExeName "SnipLite.exe"
+#define MyAppExeName "Words-Bin.exe"
 
 [Setup]
 AppId={{A1F9D9A1-5D56-4BA6-8A8A-1E4BB7AF0001}
@@ -85,7 +85,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=.
-OutputBaseFilename=SnipLite-Setup
+OutputBaseFilename=Words-Bin-Setup
 Compression=lzma
 SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64
@@ -98,7 +98,7 @@ Name: "chinesesimp"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加任务:"; Flags: unchecked
 
 [Files]
-Source: "D:\dist\SnipLite\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "D:\dist\Words-Bin\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
@@ -115,7 +115,7 @@ Filename: "{app}\{#MyAppExeName}"; Description: "运行 {#MyAppName}"; Flags: nowa
 ### 6.2 编译安装包
 
 1. 在 Inno Setup 中点击 Build -> Compile
-2. 编译完成后得到 `SnipLite-Setup.exe`
+2. 编译完成后得到 `Words-Bin-Setup.exe`
 
 ## 7. 常见问题排查
 

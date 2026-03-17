@@ -6,10 +6,14 @@
 #include <QScreen>
 #include <QCursor>
 #include <QClipboard>
+#include <QCryptographicHash>
 #include <QMimeData>
 #include <QDateTime>
+#include <QDir>
 #include <QDesktopServices>
 #include <QEasingCurve>
+#include <QByteArrayView>
+#include <QFileInfo>
 #include <QGraphicsDropShadowEffect>
 #include <QHBoxLayout>
 #include <QMessageBox>
@@ -21,6 +25,8 @@
 #include <QWindow>
 
 namespace {
+constexpr qint64 kClipboardDuplicateWindowMs = 500;
+
 QRect resolveAvailableGeometry(const QWidget *widget)
 {
     if (widget) {
@@ -42,6 +48,121 @@ QRect resolveAvailableGeometry(const QWidget *widget)
     }
 
     return QRect();
+}
+
+QString controlsStyleSheet()
+{
+    return QStringLiteral(
+        "QPushButton { background-color: #3D3D3D; color: white; border: none; padding: 12px; border-radius: 5px; text-align: left; }"
+        "QPushButton:hover { background-color: #007AFF; }"
+        "QToolButton#topActionButton { background-color: #3D3D3D; color: white; border: none; border-radius: 12px; min-width: 24px; min-height: 24px; max-width: 24px; max-height: 24px; font-weight: 600; }"
+        "QToolButton#topActionButton:hover { background-color: #007AFF; }"
+        "QToolButton#topActionButton:checked { background-color: #007AFF; color: white; }"
+        "QToolButton#topActionButton:pressed { background-color: #005FCC; }"
+        "QToolButton#topActionButton:disabled { background-color: #303030; color: #777777; }"
+        "QListWidget { background-color: transparent; border: none; outline: none; }"
+        "QListWidget::item { background-color: #383838; margin-bottom: 8px; border-radius: 6px; }"
+        "QListWidget::item:selected { background-color: #4A4A4A; border: 1px solid #00E5FF; }"
+    );
+}
+
+QString expandedPanelStyleSheet()
+{
+    return QStringLiteral(
+               "#centralWidget { background-color: #2D2D2D; border: 1.5px solid #404040; border-radius: 10px; }") +
+           controlsStyleSheet();
+}
+
+QString dockStripStyleSheet(const QString &stripColor, int stripBorderRadius)
+{
+    return QStringLiteral(
+               "#centralWidget { background-color: %1; border: 1.5px solid #404040; border-radius: %2px; }")
+               .arg(stripColor)
+               .arg(stripBorderRadius) +
+           controlsStyleSheet();
+}
+
+bool savePixmapToConfiguredPath(const QPixmap &pixmap, QString *savedPath, QString *errorText)
+{
+    if (pixmap.isNull()) {
+        if (errorText) {
+            *errorText = QStringLiteral("\u622a\u56fe\u6570\u636e\u4e3a\u7a7a\u3002");
+        }
+        return false;
+    }
+
+    QSettings settings = AppSettings::createSettings();
+    const QString dirPath = AppSettings::normalizeSavePath(
+        settings.value(AppSettings::kSavePath, AppSettings::defaultSavePath()).toString());
+
+    QDir dir(dirPath);
+    if (!dir.exists() && !dir.mkpath(QStringLiteral("."))) {
+        if (errorText) {
+            *errorText = QStringLiteral("\u4fdd\u5b58\u76ee\u5f55\u4e0d\u5b58\u5728\u4e14\u65e0\u6cd5\u521b\u5efa\uff1a\n%1")
+                             .arg(QDir::toNativeSeparators(dirPath));
+        }
+        return false;
+    }
+
+    const QString format = AppSettings::normalizeSaveFormat(
+        settings.value(AppSettings::kSaveFormat, AppSettings::kDefaultSaveFormat).toString());
+    const QString extension =
+        (format == QStringLiteral("JPG")) ? QStringLiteral("jpg") : QStringLiteral("png");
+
+    const QString timestamp =
+        QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss_zzz"));
+    const QString baseName = QStringLiteral("Words-Bin_%1").arg(timestamp);
+
+    QString filePath = dir.filePath(QStringLiteral("%1.%2").arg(baseName, extension));
+    int suffix = 1;
+    while (QFileInfo::exists(filePath)) {
+        filePath =
+            dir.filePath(QStringLiteral("%1_%2.%3").arg(baseName).arg(suffix++).arg(extension));
+    }
+
+    const QByteArray formatBytes = format.toLatin1();
+    if (!pixmap.save(filePath, formatBytes.constData())) {
+        if (errorText) {
+            *errorText = QStringLiteral("\u5199\u5165\u6587\u4ef6\u5931\u8d25\uff1a\n%1")
+                             .arg(QDir::toNativeSeparators(filePath));
+        }
+        return false;
+    }
+
+    if (savedPath) {
+        *savedPath = filePath;
+    }
+    if (errorText) {
+        errorText->clear();
+    }
+    return true;
+}
+
+QString normalizeTextForClipboardSignature(QString text)
+{
+    text.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    text.replace(QLatin1Char('\r'), QLatin1Char('\n'));
+    return text.trimmed();
+}
+
+QString clipboardSignatureForPixmap(const QPixmap &pixmap)
+{
+    if (pixmap.isNull()) {
+        return QString();
+    }
+
+    QImage image = pixmap.toImage().convertToFormat(QImage::Format_ARGB32);
+    if (image.isNull()) {
+        return QString();
+    }
+
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    hash.addData(QByteArrayView(reinterpret_cast<const char *>(image.constBits()),
+                                image.sizeInBytes()));
+    return QStringLiteral("img:%1:%2x%3")
+        .arg(QString::fromLatin1(hash.result().toHex()))
+        .arg(image.width())
+        .arg(image.height());
 }
 } // namespace
 
@@ -74,8 +195,6 @@ MainWindow::MainWindow(QWidget *parent)
         const QSettings settings = AppSettings::createSettings();
         sidebarPinned =
             settings.value(AppSettings::kSidebarPinned, AppSettings::kDefaultSidebarPinned).toBool();
-        // 加载主题设置
-        currentThemeMode = settings.value(AppSettings::kThemeMode, AppSettings::kDefaultThemeMode).toString();
     }
     
     setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
@@ -160,19 +279,7 @@ void MainWindow::setupUI()
 {
     centralWidget = new QWidget(this);
     centralWidget->setObjectName("centralWidget");
-    centralWidget->setStyleSheet(
-        "#centralWidget { background-color: #2D2D2D; border: 1.5px solid #404040; border-radius: 10px; }"
-        "QPushButton { background-color: #3D3D3D; color: white; border: none; padding: 12px; border-radius: 5px; text-align: left; }"
-        "QPushButton:hover { background-color: #007AFF; }"
-        "QToolButton#topActionButton { background-color: #3D3D3D; color: white; border: none; border-radius: 12px; min-width: 24px; min-height: 24px; max-width: 24px; max-height: 24px; font-weight: 600; }"
-        "QToolButton#topActionButton:hover { background-color: #007AFF; }"
-        "QToolButton#topActionButton:checked { background-color: #007AFF; color: white; }"
-        "QToolButton#topActionButton:pressed { background-color: #005FCC; }"
-        "QToolButton#topActionButton:disabled { background-color: #303030; color: #777777; }"
-        "QListWidget { background-color: transparent; border: none; outline: none; }"
-        "QListWidget::item { background-color: #383838; margin-bottom: 8px; border-radius: 6px; }"
-        "QListWidget::item:selected { background-color: #4A4A4A; border: 1px solid #00E5FF; }"
-    );
+    centralWidget->setStyleSheet(expandedPanelStyleSheet());
 
     auto *shadow = new QGraphicsDropShadowEffect(centralWidget);
     shadow->setBlurRadius(22);
@@ -197,8 +304,8 @@ void MainWindow::setupUI()
 
     themeToggleButton = new QToolButton(this);
     themeToggleButton->setObjectName("topActionButton");
-    themeToggleButton->setText(currentThemeMode == QStringLiteral("dark") ? QStringLiteral("?") : QStringLiteral("?"));
-    themeToggleButton->setToolTip(currentThemeMode == QStringLiteral("dark") ? QStringLiteral("Light") : QStringLiteral("Dark"));
+    themeToggleButton->setText(QStringLiteral("\u2600"));
+    themeToggleButton->setToolTip(QStringLiteral("Theme"));
     themeToggleButton->setCursor(Qt::PointingHandCursor);
     connect(themeToggleButton, &QToolButton::clicked, this, &MainWindow::onToggleTheme);
 
@@ -296,15 +403,23 @@ void MainWindow::onCustomContextMenu(const QPoint &pos)
 
     historyList->setCurrentItem(item); 
 
+    const QVariant data = item->data(Qt::UserRole);
+    const bool isImageItem =
+        data.typeId() == QMetaType::QPixmap || data.typeId() == QMetaType::Type::QPixmap ||
+        data.canConvert<QPixmap>();
+
     QMenu menu(this);
     QAction *copyAction = menu.addAction(QStringLiteral("\u590d\u5236")); 
+    QAction *saveAction = nullptr;
+    if (isImageItem) {
+        saveAction = menu.addAction(QStringLiteral("\u4fdd\u5b58"));
+    }
     menu.addSeparator(); 
     QAction *delAction = menu.addAction(QStringLiteral("\u5220\u9664")); 
     
     QAction *selected = menu.exec(historyList->mapToGlobal(pos));
     if (selected == copyAction) {
         ignoreClipboardChange = true;
-        QVariant data = item->data(Qt::UserRole);
         if (data.canConvert<QPixmap>()) {
             QApplication::clipboard()->setPixmap(data.value<QPixmap>());
         } else {
@@ -320,6 +435,22 @@ void MainWindow::onCustomContextMenu(const QPoint &pos)
         }
         historyList->clearSelection(); 
         QTimer::singleShot(100, this, [this](){ ignoreClipboardChange = false; });
+    } else if (saveAction && selected == saveAction) {
+        const QPixmap pixmap = data.value<QPixmap>();
+        QString savedPath;
+        QString errorText;
+        if (savePixmapToConfiguredPath(pixmap, &savedPath, &errorText)) {
+            QMessageBox::information(this,
+                                     QStringLiteral("\u4fdd\u5b58\u6210\u529f"),
+                                     QStringLiteral("\u5df2\u4fdd\u5b58\u5230\uff1a\n%1")
+                                         .arg(QDir::toNativeSeparators(savedPath)));
+        } else {
+            QMessageBox::warning(this,
+                                 QStringLiteral("\u4fdd\u5b58\u5931\u8d25"),
+                                 errorText.isEmpty()
+                                     ? QStringLiteral("\u65e0\u6cd5\u4fdd\u5b58\u56fe\u7247\u6587\u4ef6\u3002")
+                                     : errorText);
+        }
     } else if (selected == delAction) {
         delete historyList->takeItem(historyList->row(item));
     }
@@ -328,14 +459,51 @@ void MainWindow::onCustomContextMenu(const QPoint &pos)
 void MainWindow::onClipboardChanged()
 {
     if (ignoreClipboardChange) return;
+
     const QMimeData *mimeData = QApplication::clipboard()->mimeData();
     if (!mimeData) return;
+
+    QVariant data;
+    QString signature;
+
     if (mimeData->hasImage()) {
         QPixmap pix = qvariant_cast<QPixmap>(mimeData->imageData());
-        addClipboardItem(pix);
+        if (pix.isNull()) {
+            const QImage image = qvariant_cast<QImage>(mimeData->imageData());
+            if (!image.isNull()) {
+                pix = QPixmap::fromImage(image);
+            }
+        }
+
+        if (pix.isNull()) {
+            return;
+        }
+
+        data = pix;
+        signature = clipboardSignatureForPixmap(pix);
     } else if (mimeData->hasText()) {
-        QString text = mimeData->text().trimmed();
-        if (!text.isEmpty()) addClipboardItem(text);
+        const QString text = normalizeTextForClipboardSignature(mimeData->text());
+        if (text.isEmpty()) {
+            return;
+        }
+
+        data = text;
+        signature = QStringLiteral("txt:%1").arg(text);
+    } else {
+        return;
+    }
+
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    if (!signature.isEmpty() && signature == lastClipboardSignature &&
+        lastClipboardChangeAtMs > 0 && nowMs >= lastClipboardChangeAtMs &&
+        (nowMs - lastClipboardChangeAtMs) <= kClipboardDuplicateWindowMs) {
+        return;
+    }
+
+    addClipboardItem(data);
+    if (!signature.isEmpty()) {
+        lastClipboardSignature = signature;
+        lastClipboardChangeAtMs = nowMs;
     }
 }
 
@@ -423,7 +591,15 @@ void MainWindow::checkEdgeDocking() {
     }
 }
 
-void MainWindow::onSettingsUpdated() { enforceHistoryLimit(); }
+void MainWindow::onSettingsUpdated()
+{
+    enforceHistoryLimit();
+    if (isDocked) {
+        dockSidebar(false);
+    } else if (centralWidget) {
+        centralWidget->setStyleSheet(expandedPanelStyleSheet());
+    }
+}
 
 void MainWindow::clearClipboardHistory()
 {
@@ -527,7 +703,7 @@ void MainWindow::onRequestExit()
     const QMessageBox::StandardButton result = QMessageBox::question(
         this,
         QStringLiteral("\u9000\u51fa\u786e\u8ba4"),
-        QStringLiteral("\u786e\u5b9a\u9000\u51fa SnipLite \u5417\uff1f"),
+        QStringLiteral("\u786e\u5b9a\u9000\u51fa Words-Bin \u5417\uff1f"),
         QMessageBox::Yes | QMessageBox::No,
         QMessageBox::No);
 
@@ -595,6 +771,9 @@ void MainWindow::revealSidebarWithHold()
     }
 
     clearMask();
+    if (centralWidget) {
+        centralWidget->setStyleSheet(expandedPanelStyleSheet());
+    }
     setGeometry(rect);
     isDocked = false;
     if (centralWidget && centralWidget->graphicsEffect()) {
@@ -653,21 +832,9 @@ void MainWindow::dockSidebar(bool animated)
                                  : presetColors.first();
     
     // Apply dock strip style (color and border radius)
-    centralWidget->setStyleSheet(
-        QString("#centralWidget { background-color: %1; border: 1.5px solid #404040; border-radius: %2px; }")
-            .arg(stripColor)
-            .arg(stripBorderRadius)
-        + "QPushButton { background-color: #3D3D3D; color: white; border: none; padding: 12px; border-radius: 5px; text-align: left; }"
-          "QPushButton:hover { background-color: #007AFF; }"
-          "QToolButton#topActionButton { background-color: #3D3D3D; color: white; border: none; border-radius: 12px; min-width: 24px; min-height: 24px; max-width: 24px; max-height: 24px; font-weight: 600; }"
-          "QToolButton#topActionButton:hover { background-color: #007AFF; }"
-          "QToolButton#topActionButton:checked { background-color: #007AFF; color: white; }"
-          "QToolButton#topActionButton:pressed { background-color: #005FCC; }"
-          "QToolButton#topActionButton:disabled { background-color: #303030; color: #777777; }"
-          "QListWidget { background-color: transparent; border: none; outline: none; }"
-          "QListWidget::item { background-color: #383838; margin-bottom: 8px; border-radius: 6px; }"
-          "QListWidget::item:selected { background-color: #4A4A4A; border: 1px solid #00E5FF; }"
-    );
+    if (centralWidget) {
+        centralWidget->setStyleSheet(dockStripStyleSheet(stripColor, stripBorderRadius));
+    }
 
     const int centerY = geometry().center().y();
 
@@ -739,6 +906,9 @@ void MainWindow::expandSidebar(bool force)
     if (animation) {
         animation->stop();
     }
+    if (centralWidget) {
+        centralWidget->setStyleSheet(expandedPanelStyleSheet());
+    }
 
     if (force) {
         setGeometry(rect);
@@ -801,57 +971,5 @@ void MainWindow::applySuppressionState()
 
 void MainWindow::onToggleTheme()
 {
-    QString newTheme = (currentThemeMode == QStringLiteral("dark"))
-                           ? QStringLiteral("light")
-                           : QStringLiteral("dark");
-    currentThemeMode = newTheme;
-    
-    QSettings settings = AppSettings::createSettings();
-    settings.setValue(AppSettings::kThemeMode, newTheme);
-    settings.sync();
-    
-    applyTheme(newTheme);
-}
-
-void MainWindow::applyTheme(const QString &mode)
-{
-    AppSettings::ThemePalette palette = (mode == QStringLiteral("light"))
-                                            ? AppSettings::getLightThemePalette()
-                                            : AppSettings::getDarkThemePalette();
-    
-    // Update theme button text and tooltip
-    if (themeToggleButton) {
-        themeToggleButton->setText(mode == QStringLiteral("dark") ? QStringLiteral("?") : QStringLiteral("?"));
-        themeToggleButton->setToolTip(mode == QStringLiteral("dark") ? QStringLiteral("Light") : QStringLiteral("Dark"));
-    }
-    
-    // Apply global stylesheet
-    QString styleSheet = QString(
-        "QMainWindow, QDialog { background-color: %1; color: %3; }"
-        "QWidget { background-color: %1; color: %3; }"
-        "QPushButton { background-color: %5; color: %3; border: none; padding: 8px; border-radius: 4px; }"
-        "QPushButton:hover { background-color: %6; }"
-        "QPushButton:pressed { background-color: %7; }"
-        "QToolButton { background-color: %5; color: %3; border: none; }"
-        "QToolButton:hover { background-color: %6; }"
-        "QToolButton#topActionButton { background-color: %5; color: %3; border: none; border-radius: 6px; min-width: 24px; min-height: 24px; max-width: 24px; max-height: 24px; }"
-        "QToolButton#topActionButton:hover { background-color: %6; }"
-        "QToolButton#topActionButton:checked { background-color: %6; }"
-        "QLineEdit, QComboBox, QSpinBox { background-color: %2; color: %3; border: 1px solid %8; border-radius: 4px; padding: 4px; }"
-        "QLineEdit:focus, QComboBox:focus, QSpinBox:focus { border: 1px solid %6; }"
-        "QCheckBox { color: %3; }"
-        "QLabel { color: %3; }"
-        "QListWidget { background-color: %2; border: none; }"
-        "QListWidget::item { background-color: %2; color: %3; }"
-        "QListWidget::item:selected { background-color: %6; }"
-    ).arg(palette.background, palette.secondaryBackground, palette.text,
-          palette.secondaryText, palette.buttonBackground, palette.buttonHover,
-          palette.buttonPressed, palette.border);
-    
-    qApp->setStyleSheet(styleSheet);
-    
-    // 重新应用centralWidget的特定样式（dock strip颜色）
-    if (isDocked) {
-        dockSidebar(false);
-    }
+    // Reserved for future theme implementation.
 }

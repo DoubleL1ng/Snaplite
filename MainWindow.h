@@ -8,6 +8,7 @@
 #include <QPushButton>
 #include <QListWidget>
 #include <QLabel>
+#include <QtGlobal>
 
 class TrayIcon;
 class CaptureTool;
@@ -55,7 +56,6 @@ private:
     void updatePinnedUi();
     void applySuppressionState();
     void onToggleTheme();
-    void applyTheme(const QString &mode);
     
     TrayIcon *tray; 
     CaptureTool *captureTool;
@@ -86,7 +86,6 @@ private:
     
     // 新增：用于防止剪贴板无限复制的锁
     bool ignoreClipboardChange = false;
-    
-    // 主题相关
-    QString currentThemeMode = QStringLiteral("dark");
+    QString lastClipboardSignature;
+    qint64 lastClipboardChangeAtMs = 0;
 };

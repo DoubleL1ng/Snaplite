@@ -20,7 +20,8 @@
 namespace {
 #ifdef Q_OS_WIN
 constexpr auto kAutoStartRegPath = "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-constexpr auto kAutoStartValueName = "SnipLite";
+constexpr auto kAutoStartValueName = "Words-Bin";
+constexpr auto kLegacyAutoStartValueName = "SnipLite";
 #endif
 } // namespace
 
@@ -102,8 +103,10 @@ void TrayIcon::showSettings()
     if (dialog.autoStartEnabled()) {
         QString appPath = QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
         bootSettings.setValue(QString::fromLatin1(kAutoStartValueName), "\"" + appPath + "\"");
+        bootSettings.remove(QString::fromLatin1(kLegacyAutoStartValueName));
     } else {
         bootSettings.remove(QString::fromLatin1(kAutoStartValueName));
+        bootSettings.remove(QString::fromLatin1(kLegacyAutoStartValueName));
     }
 #endif
 

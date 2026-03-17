@@ -2,11 +2,13 @@
 
 #include "AppSettings.h"
 
+#include <QCoreApplication>
 #include <QCursor>
 #include <QDateTime>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QEventLoop>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QLabel>
@@ -114,8 +116,26 @@ CaptureTool::CaptureTool(QObject *parent) : QObject(parent), overlay(nullptr), s
 void CaptureTool::startCapture() { captureRegion(); }
 
 void CaptureTool::captureFullScreen() {
+    QWidget *hostWindow = qobject_cast<QWidget *>(parent());
+    const bool restoreHostWindow = hostWindow && hostWindow->isVisible();
+    if (restoreHostWindow) {
+        hostWindow->hide();
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 50);
+    }
+
     QScreen *s = QGuiApplication::primaryScreen();
-    if (s) confirmAndEmit(s->grabWindow(0));
+    QPixmap screenShot;
+    if (s) {
+        screenShot = s->grabWindow(0);
+    }
+
+    if (restoreHostWindow) {
+        hostWindow->show();
+    }
+
+    if (!screenShot.isNull()) {
+        confirmAndEmit(screenShot);
+    }
 }
 
 void CaptureTool::captureRegion() {
@@ -124,7 +144,19 @@ void CaptureTool::captureRegion() {
         return;
     }
 
+    QWidget *hostWindow = qobject_cast<QWidget *>(parent());
+    const bool restoreHostWindow = hostWindow && hostWindow->isVisible();
+    if (restoreHostWindow) {
+        hostWindow->hide();
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 50);
+    }
+
     frozenScreen = screen->grabWindow(0);
+
+    if (restoreHostWindow) {
+        hostWindow->show();
+    }
+
     if (frozenScreen.isNull()) {
         return;
     }
@@ -245,7 +277,7 @@ bool CaptureTool::savePixmapToConfiguredPath(const QPixmap &pixmap,
 
     const QString timestamp =
         QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss_zzz"));
-    const QString baseName = QStringLiteral("SnipLite_%1").arg(timestamp);
+    const QString baseName = QStringLiteral("Words-Bin_%1").arg(timestamp);
 
     QString filePath =
         dir.filePath(QStringLiteral("%1.%2").arg(baseName, extension));

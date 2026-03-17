@@ -20,7 +20,8 @@
 namespace {
 #ifdef Q_OS_WIN
 constexpr auto kAutoStartRegPath = "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-constexpr auto kAutoStartValueName = "SnipLite";
+constexpr auto kAutoStartValueName = "Words-Bin";
+constexpr auto kLegacyAutoStartValueName = "SnipLite";
 #endif
 } // namespace
 
@@ -100,7 +101,7 @@ void SettingsDialog::accept()
 
     savePathEdit->setText(normalizedPath);
     
-    // ±£´ædock stripÅäÖÃ
+    // Save dock strip settings.
     QSettings settings = AppSettings::createSettings();
     settings.setValue(AppSettings::kDockStripWidth, dockStripWidth());
     settings.setValue(AppSettings::kDockStripHeight, dockStripHeight());
@@ -113,7 +114,7 @@ void SettingsDialog::accept()
 
 void SettingsDialog::buildUi()
 {
-    setWindowTitle(QStringLiteral("SnipLite \u8bbe\u7f6e"));
+    setWindowTitle(QStringLiteral("Words-Bin \u8bbe\u7f6e"));
     setModal(true);
     resize(520, 360);
 
@@ -240,7 +241,7 @@ void SettingsDialog::loadCurrentSettings()
             .toInt());
     historyLimitSpin->setValue(historyLimit);
     
-    // ¼ÓÔØdock stripÅäÖÃ
+    // Load dock strip settings.
     const int stripWidth = settings.value(AppSettings::kDockStripWidth, AppSettings::kDefaultDockStripWidth).toInt();
     const int stripHeight = settings.value(AppSettings::kDockStripHeight, AppSettings::kDefaultDockStripHeight).toInt();
     const int stripRadius = settings.value(AppSettings::kDockStripBorderRadius, AppSettings::kDefaultDockStripBorderRadius).toInt();
@@ -253,7 +254,9 @@ void SettingsDialog::loadCurrentSettings()
 
 #ifdef Q_OS_WIN
     QSettings bootSettings(QString::fromLatin1(kAutoStartRegPath), QSettings::NativeFormat);
-    autoStartCheck->setChecked(bootSettings.contains(QString::fromLatin1(kAutoStartValueName)));
+    autoStartCheck->setChecked(
+        bootSettings.contains(QString::fromLatin1(kAutoStartValueName)) ||
+        bootSettings.contains(QString::fromLatin1(kLegacyAutoStartValueName)));
 #else
     autoStartCheck->setChecked(false);
 #endif

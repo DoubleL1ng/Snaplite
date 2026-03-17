@@ -7,8 +7,10 @@
 #include <QtGlobal>
 
 namespace AppSettings {
-inline const QString kOrganization = QStringLiteral("SnipLite");
-inline const QString kApplication = QStringLiteral("SnipLite");
+inline const QString kLegacyOrganization = QStringLiteral("SnipLite");
+inline const QString kLegacyApplication = QStringLiteral("SnipLite");
+inline const QString kOrganization = QStringLiteral("Words-Bin");
+inline const QString kApplication = QStringLiteral("Words-Bin");
 
 inline const QString kCaptureHotkey = QStringLiteral("shortcuts/capture");
 inline const QString kSavePath = QStringLiteral("savePath");
@@ -51,8 +53,30 @@ inline constexpr int kSidebarExpandDebounceMs = 250;
 inline constexpr int kTrayRevealHoldMs = 3000;
 inline constexpr int kPreCaptureDelayMs = 60;
 
+inline void migrateLegacySettingsIfNeeded()
+{
+    static bool migrated = false;
+    if (migrated) {
+        return;
+    }
+    migrated = true;
+
+    QSettings currentSettings(kOrganization, kApplication);
+    if (!currentSettings.allKeys().isEmpty()) {
+        return;
+    }
+
+    QSettings legacySettings(kLegacyOrganization, kLegacyApplication);
+    const QStringList legacyKeys = legacySettings.allKeys();
+    for (const QString &key : legacyKeys) {
+        currentSettings.setValue(key, legacySettings.value(key));
+    }
+    currentSettings.sync();
+}
+
 inline QSettings createSettings()
 {
+    migrateLegacySettingsIfNeeded();
     return QSettings(kOrganization, kApplication);
 }
 

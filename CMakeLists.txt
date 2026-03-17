@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(SnipLite LANGUAGES CXX)
+project(WordsBin LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -12,7 +12,7 @@ set(CMAKE_AUTOUIC ON)
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Gui)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Gui)
 
-add_executable(SnipLite
+add_executable(WordsBin
     main.cpp
     AppSettings.h
     MainWindow.cpp
@@ -25,12 +25,14 @@ add_executable(SnipLite
     CaptureTool.h
 )
 
-target_link_libraries(SnipLite PRIVATE
+target_link_libraries(WordsBin PRIVATE
     Qt${QT_VERSION_MAJOR}::Widgets
     Qt${QT_VERSION_MAJOR}::Gui
     dwmapi
 )
 
+set_target_properties(WordsBin PROPERTIES OUTPUT_NAME "Words-Bin")
+
 if(WIN32)
-    set_target_properties(SnipLite PROPERTIES WIN32_EXECUTABLE TRUE)
+    set_target_properties(WordsBin PROPERTIES WIN32_EXECUTABLE TRUE)
 endif()

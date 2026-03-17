@@ -1,10 +1,10 @@
-# SnipLite - 轻量级截图工具
+# Words-Bin（桶） - 轻量级截图与剪贴板工具
 
 English | [中文](README.md)
 
 ## 项目简介
 
-SnipLite 是一个运行在 Windows 上的轻量级截图工具，提供高效、直观的截图体验。支持区域截图、全屏截图，集成系统托盘、热键、剪贴板历史等功能。
+Words-Bin（中文名：桶）是一个运行在 Windows 上的轻量级截图与剪贴板工具，提供高效、直观的截图体验。支持区域截图、全屏截图，集成系统托盘、热键、剪贴板历史等功能。
 
 ## ? 主要功能
 
@@ -30,8 +30,8 @@ SnipLite 是一个运行在 Windows 上的轻量级截图工具，提供高效、直观的截图体验。支持
 
 1. **克隆仓库**
    ```bash
-   git clone https://github.com/DoubleL1ng/Snaplite.git
-   cd SnipLite
+   git clone https://github.com/DoubleL1ng/Snaplite.git Words-Bin
+   cd Words-Bin
    ```
 
 2. **使用 Qt Creator 打开项目**
@@ -47,7 +47,7 @@ SnipLite 是一个运行在 Windows 上的轻量级截图工具，提供高效、直观的截图体验。支持
 
 4. **运行**
    - Debug 模式：点击 Qt Creator 的 `Run` 按钮
-   - 直接运行可执行文件：`build/.../SnipLite.exe`
+   - 直接运行可执行文件：`build/.../Words-Bin.exe`
 
 ## ? 使用指南
 
@@ -80,7 +80,7 @@ SnipLite 是一个运行在 Windows 上的轻量级截图工具，提供高效、直观的截图体验。支持
 ## ? 项目结构
 
 ```
-SnipLite/
+Words-Bin/
 ├── main.cpp                 # 应用入口
 ├── MainWindow.h/.cpp        # 主窗口和侧边栏逻辑
 ├── CaptureTool.h/.cpp       # 截图选择和渲染
@@ -100,6 +100,7 @@ SnipLite/
 - **语言** — C++17
 - **构建系统** — CMake
 - **平台** — Windows（使用系统 API 实现全局热键）
+- **产品名** — Words-Bin（中文名：桶）
 
 ### 核心模块
 
@@ -114,7 +115,7 @@ SnipLite/
 ### 构建注意事项
 
 - **Release vs Debug** — 推荐日常使用 Release 版本；开发调试使用 Debug 版本
-- **链接器锁** — Release 编译时若 `SnipLite.exe` 正在运行，需先关闭（使用 `Stop-Process -Name SnipLite` 命令）
+- **链接器锁** — Release 编译时若 `Words-Bin.exe` 正在运行，需先关闭（使用 `Stop-Process -Name Words-Bin` 命令）
 - **DPI 适配** — 代码中已处理 2K/4K 高分屏缩放
 
 ## ? 版本历史
@@ -140,6 +141,9 @@ SnipLite/
 ## ? 反馈
 
 如有问题、建议或功能请求，欢迎在 [Issues](https://github.com/DoubleL1ng/Snaplite/issues) 中提出。
+
+当前 GitHub 仓库地址仍为旧地址，待线上仓库实际改名后可再同步切换：
+https://github.com/DoubleL1ng/Snaplite
 
 ---
 
