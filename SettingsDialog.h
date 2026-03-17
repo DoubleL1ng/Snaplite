@@ -23,6 +23,10 @@ public:
     int historyMaxItems() const;
     bool shouldClearHistory() const;
     bool autoStartEnabled() const;
+    int dockStripWidth() const;
+    int dockStripHeight() const;
+    int dockStripBorderRadius() const;
+    int dockStripColorIndex() const;
 
 protected:
     void accept() override;
@@ -38,6 +42,10 @@ private:
     QSpinBox *historyLimitSpin = nullptr;
     QPushButton *clearHistoryButton = nullptr;
     QCheckBox *autoStartCheck = nullptr;
+    QSpinBox *dockStripWidthSpin = nullptr;
+    QSpinBox *dockStripHeightSpin = nullptr;
+    QSpinBox *dockStripRadiusSpin = nullptr;
+    QComboBox *dockStripColorCombo = nullptr;
 
     bool clearHistoryRequested = false;
 };

@@ -74,6 +74,8 @@ MainWindow::MainWindow(QWidget *parent)
         const QSettings settings = AppSettings::createSettings();
         sidebarPinned =
             settings.value(AppSettings::kSidebarPinned, AppSettings::kDefaultSidebarPinned).toBool();
+        // 加载主题设置
+        currentThemeMode = settings.value(AppSettings::kThemeMode, AppSettings::kDefaultThemeMode).toString();
     }
     
     setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
@@ -193,6 +195,13 @@ void MainWindow::setupUI()
     githubButton->setCursor(Qt::PointingHandCursor);
     connect(githubButton, &QToolButton::clicked, this, &MainWindow::onOpenGitHub);
 
+    themeToggleButton = new QToolButton(this);
+    themeToggleButton->setObjectName("topActionButton");
+    themeToggleButton->setText(currentThemeMode == QStringLiteral("dark") ? QStringLiteral("?") : QStringLiteral("?"));
+    themeToggleButton->setToolTip(currentThemeMode == QStringLiteral("dark") ? QStringLiteral("浅色") : QStringLiteral("深色"));
+    themeToggleButton->setCursor(Qt::PointingHandCursor);
+    connect(themeToggleButton, &QToolButton::clicked, this, &MainWindow::onToggleTheme);
+
     pinButton = new QToolButton(this);
     pinButton->setObjectName("topActionButton");
     pinButton->setCheckable(true);
@@ -215,6 +224,7 @@ void MainWindow::setupUI()
     connect(exitButton, &QToolButton::clicked, this, &MainWindow::onRequestExit);
 
     topBarLayout->addWidget(githubButton);
+    topBarLayout->addWidget(themeToggleButton);
     topBarLayout->addWidget(pinButton);
     topBarLayout->addWidget(settingsButton);
     topBarLayout->addWidget(exitButton);
@@ -628,6 +638,37 @@ void MainWindow::dockSidebar(bool animated)
         return;
     }
 
+    const QSettings settings = AppSettings::createSettings();
+    const int stripWidth = settings.value(AppSettings::kDockStripWidth, AppSettings::kDefaultDockStripWidth).toInt();
+    const int stripHeight = settings.value(AppSettings::kDockStripHeight, AppSettings::kDefaultDockStripHeight).toInt();
+    const int stripBorderRadius = settings.value(AppSettings::kDockStripBorderRadius, AppSettings::kDefaultDockStripBorderRadius).toInt();
+    const int colorIndex = settings.value(AppSettings::kDockStripColorIndex, AppSettings::kDefaultDockStripColorIndex).toInt();
+    
+    dockTriggerWidth = qBound(AppSettings::kMinDockStripWidth, stripWidth, AppSettings::kMaxDockStripWidth);
+    dockTriggerHeight = qBound(AppSettings::kMinDockStripHeight, stripHeight, AppSettings::kMaxDockStripHeight);
+    
+    const QStringList presetColors = AppSettings::getDockStripPresetColors();
+    const QString stripColor = (colorIndex >= 0 && colorIndex < presetColors.size()) 
+                                 ? presetColors.at(colorIndex)
+                                 : presetColors.first();
+    
+    // 应用dock strip的样式（颜色和圆角）
+    centralWidget->setStyleSheet(
+        QString("#centralWidget { background-color: %1; border: 1.5px solid #404040; border-radius: %2px; }")
+            .arg(stripColor)
+            .arg(stripBorderRadius)
+        + "QPushButton { background-color: #3D3D3D; color: white; border: none; padding: 12px; border-radius: 5px; text-align: left; }"
+          "QPushButton:hover { background-color: #007AFF; }"
+          "QToolButton#topActionButton { background-color: #3D3D3D; color: white; border: none; border-radius: 12px; min-width: 24px; min-height: 24px; max-width: 24px; max-height: 24px; font-weight: 600; }"
+          "QToolButton#topActionButton:hover { background-color: #007AFF; }"
+          "QToolButton#topActionButton:checked { background-color: #007AFF; color: white; }"
+          "QToolButton#topActionButton:pressed { background-color: #005FCC; }"
+          "QToolButton#topActionButton:disabled { background-color: #303030; color: #777777; }"
+          "QListWidget { background-color: transparent; border: none; outline: none; }"
+          "QListWidget::item { background-color: #383838; margin-bottom: 8px; border-radius: 6px; }"
+          "QListWidget::item:selected { background-color: #4A4A4A; border: 1px solid #00E5FF; }"
+    );
+
     const int centerY = geometry().center().y();
 
     setMinimumWidth(0);
@@ -756,4 +797,61 @@ void MainWindow::applySuppressionState()
     }
 
     updateDockMask();
+}
+
+void MainWindow::onToggleTheme()
+{
+    QString newTheme = (currentThemeMode == QStringLiteral("dark"))
+                           ? QStringLiteral("light")
+                           : QStringLiteral("dark");
+    currentThemeMode = newTheme;
+    
+    QSettings settings = AppSettings::createSettings();
+    settings.setValue(AppSettings::kThemeMode, newTheme);
+    settings.sync();
+    
+    applyTheme(newTheme);
+}
+
+void MainWindow::applyTheme(const QString &mode)
+{
+    AppSettings::ThemePalette palette = (mode == QStringLiteral("light"))
+                                            ? AppSettings::getLightThemePalette()
+                                            : AppSettings::getDarkThemePalette();
+    
+    // 更新主题按钮的文字和工具提示
+    if (themeToggleButton) {
+        themeToggleButton->setText(mode == QStringLiteral("dark") ? QStringLiteral("?") : QStringLiteral("?"));
+        themeToggleButton->setToolTip(mode == QStringLiteral("dark") ? QStringLiteral("浅色") : QStringLiteral("深色"));
+    }
+    
+    // 应用全局样式表
+    QString styleSheet = QString(
+        "QMainWindow, QDialog { background-color: %1; color: %3; }"
+        "QWidget { background-color: %1; color: %3; }"
+        "QPushButton { background-color: %5; color: %3; border: none; padding: 8px; border-radius: 4px; }"
+        "QPushButton:hover { background-color: %6; }"
+        "QPushButton:pressed { background-color: %7; }"
+        "QToolButton { background-color: %5; color: %3; border: none; }"
+        "QToolButton:hover { background-color: %6; }"
+        "QToolButton#topActionButton { background-color: %5; color: %3; border: none; border-radius: 6px; min-width: 24px; min-height: 24px; max-width: 24px; max-height: 24px; }"
+        "QToolButton#topActionButton:hover { background-color: %6; }"
+        "QToolButton#topActionButton:checked { background-color: %6; }"
+        "QLineEdit, QComboBox, QSpinBox { background-color: %2; color: %3; border: 1px solid %8; border-radius: 4px; padding: 4px; }"
+        "QLineEdit:focus, QComboBox:focus, QSpinBox:focus { border: 1px solid %6; }"
+        "QCheckBox { color: %3; }"
+        "QLabel { color: %3; }"
+        "QListWidget { background-color: %2; border: none; }"
+        "QListWidget::item { background-color: %2; color: %3; }"
+        "QListWidget::item:selected { background-color: %6; }"
+    ).arg(palette.background, palette.secondaryBackground, palette.text,
+          palette.secondaryText, palette.buttonBackground, palette.buttonHover,
+          palette.buttonPressed, palette.border);
+    
+    qApp->setStyleSheet(styleSheet);
+    
+    // 重新应用centralWidget的特定样式（dock strip颜色）
+    if (isDocked) {
+        dockSidebar(false);
+    }
 }

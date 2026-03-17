@@ -54,6 +54,8 @@ private:
     void revealSidebarWithHold();
     void updatePinnedUi();
     void applySuppressionState();
+    void onToggleTheme();
+    void applyTheme(const QString &mode);
     
     TrayIcon *tray; 
     CaptureTool *captureTool;
@@ -62,6 +64,7 @@ private:
     QVBoxLayout *mainLayout;
     QListWidget *historyList;
     QToolButton *pinButton = nullptr;
+    QToolButton *themeToggleButton = nullptr;
     
     QTimer *edgeTimer;
     QPropertyAnimation *animation;
@@ -82,5 +85,8 @@ private:
     bool previewDialogVisible = false;
     
     // 新增：用于防止剪贴板无限复制的锁
-    bool ignoreClipboardChange = false; 
+    bool ignoreClipboardChange = false;
+    
+    // 主题相关
+    QString currentThemeMode = QStringLiteral("dark");
 };
