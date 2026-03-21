@@ -1,0 +1,12 @@
+<RCC>
+    <qresource prefix="/icons">
+        <file alias="words-bin_logo.ico">icons/words-bin_logo.ico</file>
+        <file alias="applogo_512.png">icons/applogo_512.png</file>
+        <file alias="github.svg">icons/github.svg</file>
+        <file alias="theme_light.svg">icons/theme_light.svg</file>
+        <file alias="theme_dark.svg">icons/theme_dark.svg</file>
+        <file alias="pin.svg">icons/pin.svg</file>
+        <file alias="settings.svg">icons/settings.svg</file>
+        <file alias="shutdown.svg">icons/shutdown.svg</file>
+    </qresource>
+</RCC>

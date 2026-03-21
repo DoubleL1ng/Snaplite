@@ -15,6 +15,7 @@
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QKeyEvent>
 #include <QPushButton>
 #include <QScreen>
 #include <QSettings>
@@ -58,6 +59,7 @@ public:
         setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
         setAttribute(Qt::WA_OpaquePaintEvent);
         setAttribute(Qt::WA_DeleteOnClose);
+        setFocusPolicy(Qt::StrongFocus);
         setWindowState(Qt::WindowFullScreen);
         setCursor(Qt::CrossCursor);
     }
@@ -105,6 +107,15 @@ protected:
             tool->selectionEnd = e->globalPosition().toPoint();
             tool->finishSelection();
         }
+    }
+    void keyPressEvent(QKeyEvent *e) override {
+        if (e->key() == Qt::Key_Escape) {
+            tool->selecting = false;
+            close();
+            e->accept();
+            return;
+        }
+        QWidget::keyPressEvent(e);
     }
 private:
     CaptureTool *tool;
@@ -179,6 +190,8 @@ void CaptureTool::captureRegion() {
         }
     });
     overlay->show();
+    overlay->activateWindow();
+    overlay->setFocus();
 }
 
 void CaptureTool::finishSelection() {

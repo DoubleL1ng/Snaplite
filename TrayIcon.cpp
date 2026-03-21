@@ -10,8 +10,12 @@
 #include <QDir>
 #include <QIcon>
 #include <QMenu>
+#include <QPainter>
+#include <QPixmap>
 #include <QSettings>
+#include <QStringList>
 #include <QStyle>
+#include <QTimer>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -23,21 +27,72 @@ constexpr auto kAutoStartRegPath = "HKEY_CURRENT_USER\\Software\\Microsoft\\Wind
 constexpr auto kAutoStartValueName = "Words-Bin";
 constexpr auto kLegacyAutoStartValueName = "SnipLite";
 #endif
-} // namespace
 
-TrayIcon::TrayIcon(QObject *parent) : QObject(parent)
+QIcon createAppTrayIcon()
 {
+    const QStringList candidates = {
+        QStringLiteral(":/icons/applogo_512.png"),
+        QStringLiteral(":/icons/words-bin_logo.ico")
+    };
+
+    for (const QString &path : candidates) {
+        const QIcon source(path);
+        if (source.isNull()) {
+            continue;
+        }
+
+        QIcon icon;
+        icon.addPixmap(source.pixmap(16, 16));
+        icon.addPixmap(source.pixmap(20, 20));
+        icon.addPixmap(source.pixmap(24, 24));
+        icon.addPixmap(source.pixmap(32, 32));
+        if (!icon.isNull()) {
+            return icon;
+        }
+    }
+
+    // High-contrast fallback for Windows tray to avoid invisible icons.
+    QPixmap fallback(32, 32);
+    fallback.fill(Qt::transparent);
+    {
+        QPainter painter(&fallback);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(0, 120, 215));
+        painter.drawRoundedRect(2, 2, 28, 28, 7, 7);
+        painter.setBrush(Qt::white);
+        painter.drawEllipse(10, 10, 12, 12);
+    }
+    QIcon generated;
+    generated.addPixmap(fallback.scaled(16, 16, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    generated.addPixmap(fallback.scaled(20, 20, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    generated.addPixmap(fallback.scaled(24, 24, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    generated.addPixmap(fallback);
+    if (!generated.isNull()) {
+        return generated;
+    }
+
     QIcon icon = QIcon::fromTheme("camera-photo");
     if (icon.isNull()) {
         icon = QApplication::style()->standardIcon(QStyle::SP_ComputerIcon);
     }
+    return icon;
+}
+} // namespace
+
+TrayIcon::TrayIcon(QObject *parent) : QObject(parent)
+{
+    const QIcon icon = createAppTrayIcon();
 
     loadSettings();
 
     trayIcon = new QSystemTrayIcon(icon, this);
+    trayIcon->setToolTip(QStringLiteral("Words-Bin"));
     createTrayMenu();
     connect(trayIcon, &QSystemTrayIcon::activated, this, &TrayIcon::onActivated);
     trayIcon->show();
+    QTimer::singleShot(0, this, [this, icon]() { trayIcon->setIcon(icon); });
+    QTimer::singleShot(800, this, [this, icon]() { trayIcon->setIcon(icon); });
 
     qApp->installNativeEventFilter(this);
 

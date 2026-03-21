@@ -1,4 +1,5 @@
 #pragma once
+#include "AppSettings.h"
 #include <QMainWindow>
 #include <QTimer>
 #include <QPropertyAnimation>
@@ -45,8 +46,14 @@ private slots:
 
 private:
     void setupUI();
+    void applyTheme();
+    bool isLightTheme() const;
+    void updateThemeToggleUi();
+    QString currentThemeMode() const;
+    void updateTopBarIcons();
     int currentHistoryLimit() const;
     void enforceHistoryLimit();
+    void setDockContentVisible(bool visible);
     bool shouldSuppressSidebar() const;
     QRect dockTriggerRect() const;
     void updateDockMask();
@@ -63,8 +70,11 @@ private:
     QWidget *centralWidget;
     QVBoxLayout *mainLayout;
     QListWidget *historyList;
+    QToolButton *githubButton = nullptr;
     QToolButton *pinButton = nullptr;
     QToolButton *themeToggleButton = nullptr;
+    QToolButton *settingsButton = nullptr;
+    QToolButton *exitButton = nullptr;
     
     QTimer *edgeTimer;
     QPropertyAnimation *animation;
@@ -83,6 +93,7 @@ private:
     bool regionCaptureActive = false;
     bool regionCaptureShouldHideSidebar = false;
     bool previewDialogVisible = false;
+    QString themeMode = AppSettings::kDefaultThemeMode;
     
     // 新增：用于防止剪贴板无限复制的锁
     bool ignoreClipboardChange = false;

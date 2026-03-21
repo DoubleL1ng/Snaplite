@@ -1,29 +1,20 @@
-# Build output
+# Build artifacts
 build/
-cmake-build-*/
-*.obj
-*.o
-*.a
-*.lib
-*.dll
-*.exe
-*.exp
-*.pdb
 
-# CMake generated
-CMakeCache.txt
+# IDE files
+.qtcreator/
+.vscode/
+
+# CMake generated files
 CMakeFiles/
+CMakeCache.txt
 cmake_install.cmake
 Makefile
-compile_commands.json
 
-# Qt Creator user/local settings
-.qtcreator/
-*.pro.user*
-*.qtc.user*
-*.autosave
+# Qt generated files
+*_autogen/
 
-# OS/editor
-.DS_Store
-Thumbs.db
-.vscode/
+# Logs and temporary files
+*.log
+*.tmp
+*.user

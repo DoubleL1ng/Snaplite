@@ -8,6 +8,8 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QFormLayout>
+#include <QGridLayout>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QKeySequenceEdit>
 #include <QLabel>
@@ -54,7 +56,9 @@ bool SettingsDialog::hideSidebar() const { return hideSidebarCheck->isChecked();
 
 int SettingsDialog::historyMaxItems() const
 {
-    return AppSettings::normalizeHistoryMaxItems(historyLimitSpin->value());
+    bool ok = false;
+    int value = historyLimitCombo->currentText().toInt(&ok);
+    return ok ? AppSettings::normalizeHistoryMaxItems(value) : AppSettings::kDefaultHistoryMaxItems;
 }
 
 bool SettingsDialog::shouldClearHistory() const { return clearHistoryRequested; }
@@ -83,11 +87,6 @@ int SettingsDialog::dockStripBorderRadius() const
     return dockStripRadiusSpin->value();
 }
 
-int SettingsDialog::dockStripColorIndex() const
-{
-    return dockStripColorCombo->currentIndex();
-}
-
 void SettingsDialog::accept()
 {
     const QString normalizedPath = AppSettings::normalizeSavePath(savePathEdit->text());
@@ -106,7 +105,6 @@ void SettingsDialog::accept()
     settings.setValue(AppSettings::kDockStripWidth, dockStripWidth());
     settings.setValue(AppSettings::kDockStripHeight, dockStripHeight());
     settings.setValue(AppSettings::kDockStripBorderRadius, dockStripBorderRadius());
-    settings.setValue(AppSettings::kDockStripColorIndex, dockStripColorIndex());
     settings.sync();
     
     QDialog::accept();
@@ -114,22 +112,31 @@ void SettingsDialog::accept()
 
 void SettingsDialog::buildUi()
 {
-    setWindowTitle(QStringLiteral("Words-Bin \u8bbe\u7f6e"));
+    setWindowTitle(QStringLiteral("\u8bbe\u7f6e - Words-Bin"));
     setModal(true);
-    resize(520, 360);
+    resize(560, 520);
 
-    QFormLayout *layout = new QFormLayout(this);
+    QVBoxLayout *rootLayout = new QVBoxLayout(this);
+    rootLayout->setContentsMargins(14, 14, 14, 14);
+    rootLayout->setSpacing(10);
+
+    QGroupBox *generalGroup = new QGroupBox(QStringLiteral("\u622a\u56fe\u4e0e\u4fdd\u5b58"), this);
+    QFormLayout *generalLayout = new QFormLayout(generalGroup);
+    generalLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    generalLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    generalLayout->setFormAlignment(Qt::AlignTop);
 
     hotkeyEdit = new QKeySequenceEdit(this);
-    layout->addRow(QStringLiteral("\u622a\u56fe\u5feb\u6377\u952e:"), hotkeyEdit);
+    generalLayout->addRow(QStringLiteral("\u622a\u56fe\u5feb\u6377\u952e:"), hotkeyEdit);
 
     savePathEdit = new QLineEdit(this);
     QPushButton *browseButton = new QPushButton(QStringLiteral("\u6d4f\u89c8..."), this);
     QHBoxLayout *pathLayout = new QHBoxLayout();
     pathLayout->setContentsMargins(0, 0, 0, 0);
-    pathLayout->addWidget(savePathEdit);
+    pathLayout->setSpacing(8);
+    pathLayout->addWidget(savePathEdit, 1);
     pathLayout->addWidget(browseButton);
-    layout->addRow(QStringLiteral("\u4fdd\u5b58\u8def\u5f84:"), pathLayout);
+    generalLayout->addRow(QStringLiteral("\u4fdd\u5b58\u8def\u5f84:"), pathLayout);
 
     connect(browseButton, &QPushButton::clicked, this, [this]() {
         const QString selectedDir = QFileDialog::getExistingDirectory(
@@ -144,76 +151,127 @@ void SettingsDialog::buildUi()
     saveFormatCombo = new QComboBox(this);
     saveFormatCombo->addItem(QStringLiteral("PNG"));
     saveFormatCombo->addItem(QStringLiteral("JPG"));
-    layout->addRow(QStringLiteral("\u56fe\u7247\u683c\u5f0f:"), saveFormatCombo);
+    generalLayout->addRow(QStringLiteral("\u56fe\u7247\u683c\u5f0f:"), saveFormatCombo);
 
     hideSidebarCheck = new QCheckBox(QStringLiteral("\u533a\u57df\u622a\u56fe\u65f6\u9690\u85cf\u4fa7\u8fb9\u680f"), this);
-    layout->addRow(QString(), hideSidebarCheck);
+    generalLayout->addRow(QString(), hideSidebarCheck);
 
-    historyLimitSpin = new QSpinBox(this);
-    historyLimitSpin->setRange(AppSettings::kMinHistoryMaxItems, AppSettings::kMaxHistoryMaxItems);
-    layout->addRow(QStringLiteral("\u5386\u53f2\u4e0a\u9650:"), historyLimitSpin);
+    historyLimitCombo = new QComboBox(this);
+    historyLimitCombo->addItem(QStringLiteral("30"));
+    historyLimitCombo->addItem(QStringLiteral("50"));
+    historyLimitCombo->addItem(QStringLiteral("100"));
+    generalLayout->addRow(QStringLiteral("\u5386\u53f2\u4e0a\u9650:"), historyLimitCombo);
 
     clearHistoryButton = new QPushButton(QStringLiteral("\u6e05\u7a7a\u526a\u8d34\u677f\u5386\u53f2"), this);
-    layout->addRow(QString(), clearHistoryButton);
+    generalLayout->addRow(QString(), clearHistoryButton);
     connect(clearHistoryButton, &QPushButton::clicked, this, [this]() {
         clearHistoryRequested = true;
         clearHistoryButton->setText(QStringLiteral("\u5df2\u6807\u8bb0\uff1a\u4fdd\u5b58\u540e\u6e05\u7a7a\u5386\u53f2"));
     });
 
-    // Dock strip customization section
-    layout->addRow(new QLabel(QStringLiteral("===================")));
-    layout->addRow(new QLabel(QStringLiteral("<b>Dock Strip</b>")));
-    
-    // Dock strip width
+    QGroupBox *dockGroup = new QGroupBox(QStringLiteral("\u505c\u9760\u6761"), this);
+    QGridLayout *dockLayout = new QGridLayout(dockGroup);
+    dockLayout->setContentsMargins(10, 8, 10, 8);
+    dockLayout->setHorizontalSpacing(10);
+    dockLayout->setVerticalSpacing(8);
+
     dockStripWidthSpin = new QSpinBox(this);
     dockStripWidthSpin->setRange(AppSettings::kMinDockStripWidth, AppSettings::kMaxDockStripWidth);
     dockStripWidthSpin->setSuffix(QStringLiteral(" px"));
-    layout->addRow(QStringLiteral("Width:"), dockStripWidthSpin);
-    
-    // Dock strip height
+    dockStripWidthSpin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    dockStripWidthSpin->setToolTip(QStringLiteral("\u53ef\u76f4\u63a5\u8f93\u5165\u6570\u5b57\u6216\u4f7f\u7528\u9f20\u6807\u6eda\u8f6e\u8c03\u6574"));
+
     dockStripHeightSpin = new QSpinBox(this);
     dockStripHeightSpin->setRange(AppSettings::kMinDockStripHeight, AppSettings::kMaxDockStripHeight);
     dockStripHeightSpin->setSuffix(QStringLiteral(" px"));
-    layout->addRow(QStringLiteral("Height:"), dockStripHeightSpin);
-    
-    // Dock strip border radius
+    dockStripHeightSpin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    dockStripHeightSpin->setToolTip(QStringLiteral("\u53ef\u76f4\u63a5\u8f93\u5165\u6570\u5b57\u6216\u4f7f\u7528\u9f20\u6807\u6eda\u8f6e\u8c03\u6574"));
+
     dockStripRadiusSpin = new QSpinBox(this);
     dockStripRadiusSpin->setRange(AppSettings::kMinDockStripBorderRadius, AppSettings::kMaxDockStripBorderRadius);
     dockStripRadiusSpin->setSuffix(QStringLiteral(" px"));
-    layout->addRow(QStringLiteral("Border Radius:"), dockStripRadiusSpin);
-    
-    // Dock strip color preset
-    dockStripColorCombo = new QComboBox(this);
-    const QStringList presetColors = AppSettings::getDockStripPresetColors();
-    for (int i = 0; i < presetColors.size(); ++i) {
-        const QString color = presetColors.at(i);
-        dockStripColorCombo->addItem(color);
-        // Set color display
-        dockStripColorCombo->setItemData(i, QBrush(QColor(color)), Qt::BackgroundRole);
-    }
-    layout->addRow(QStringLiteral("Color:"), dockStripColorCombo);
+    dockStripRadiusSpin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    dockStripRadiusSpin->setToolTip(QStringLiteral("\u53ef\u76f4\u63a5\u8f93\u5165\u6570\u5b57\u6216\u4f7f\u7528\u9f20\u6807\u6eda\u8f6e\u8c03\u6574"));
+
+    dockLayout->addWidget(new QLabel(QStringLiteral("\u5bbd\u5ea6:"), this), 0, 0);
+    dockLayout->addWidget(dockStripWidthSpin, 0, 1);
+    dockLayout->addWidget(new QLabel(QStringLiteral("\u9ad8\u5ea6:"), this), 0, 2);
+    dockLayout->addWidget(dockStripHeightSpin, 0, 3);
+    dockLayout->addWidget(new QLabel(QStringLiteral("\u5706\u89d2\u534a\u5f84:"), this), 1, 0);
+    dockLayout->addWidget(dockStripRadiusSpin, 1, 1);
+    dockLayout->setColumnStretch(1, 1);
+    dockLayout->setColumnStretch(3, 1);
+
+    QGroupBox *systemGroup = new QGroupBox(QStringLiteral("\u7cfb\u7edf"), this);
+    QVBoxLayout *systemLayout = new QVBoxLayout(systemGroup);
+    systemLayout->setContentsMargins(10, 8, 10, 8);
+    systemLayout->setSpacing(8);
 
     autoStartCheck = new QCheckBox(QStringLiteral("\u5f00\u673a\u81ea\u52a8\u8fd0\u884c"), this);
 #ifdef Q_OS_WIN
-    layout->addRow(QString(), autoStartCheck);
+    systemLayout->addWidget(autoStartCheck);
 #else
     autoStartCheck->setEnabled(false);
-    autoStartCheck->setToolTip(QStringLiteral("\u4ec5 Windows \u53ef\u7528"));
-    layout->addRow(QString(), autoStartCheck);
+    autoStartCheck->setToolTip(QStringLiteral("仅 Windows 可用"));
+    systemLayout->addWidget(autoStartCheck);
 #endif
 
     QLabel *hintLabel = new QLabel(
         QStringLiteral("\u8bf4\u660e\uff1a\u70b9\u51fb\u9884\u89c8\u7a97\u53e3\u7684\u201c\u4fdd\u5b58\u201d\u6309\u94ae\u624d\u4f1a\u843d\u76d8\uff0c\u201c\u5b8c\u6210\u201d\u4ec5\u5199\u5165\u526a\u8d34\u677f\u548c\u5386\u53f2\u3002"),
         this);
     hintLabel->setWordWrap(true);
-    layout->addRow(QString(), hintLabel);
+    hintLabel->setObjectName("hintLabel");
+    systemLayout->addWidget(hintLabel);
+
+    rootLayout->addWidget(generalGroup);
+    rootLayout->addWidget(dockGroup);
+    rootLayout->addWidget(systemGroup);
+    rootLayout->addStretch(1);
 
     QDialogButtonBox *buttonBox =
         new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
-    layout->addWidget(buttonBox);
+    rootLayout->addWidget(buttonBox);
 
     connect(buttonBox, &QDialogButtonBox::accepted, this, &SettingsDialog::accept);
     connect(buttonBox, &QDialogButtonBox::rejected, this, &SettingsDialog::reject);
+
+    applyTheme();
+}
+
+void SettingsDialog::applyTheme()
+{
+    // 设置面板始终使用浅色模式
+    const AppSettings::ThemePalette palette = AppSettings::getLightThemePalette();
+
+    // Apply palette for title bar and overall appearance
+    QPalette dlgPalette;
+    dlgPalette.setColor(QPalette::Window, QColor(palette.background));
+    dlgPalette.setColor(QPalette::WindowText, QColor(palette.text));
+    setPalette(dlgPalette);
+
+    setStyleSheet(QStringLiteral(
+                     "QDialog { background-color: %1; color: %2; }"
+                     "QGroupBox { border: 1px solid %3; border-radius: 8px; margin-top: 10px; padding-top: 8px; font-weight: 600; color: %2; }"
+                     "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; }"
+                     "QLabel { color: %2; }"
+                     "QLabel#hintLabel { color: %4; }"
+                     "QLineEdit, QComboBox, QSpinBox, QKeySequenceEdit { background-color: %5; color: %2; border: 1px solid %3; border-radius: 6px; min-height: 30px; padding: 2px 8px; }"
+                     "QSpinBox::up-button { display: none; }"
+                     "QSpinBox::down-button { display: none; }"
+                     "QComboBox::drop-down { border: none; width: 24px; }"
+                     "QPushButton { background-color: %6; color: %2; border: 1px solid %3; border-radius: 6px; min-height: 30px; padding: 0 12px; }"
+                     "QPushButton:hover { background-color: %7; color: #FFFFFF; }"
+                     "QPushButton:pressed { background-color: %8; color: #FFFFFF; }"
+                     "QCheckBox { color: %2; min-height: 24px; }"
+                     "QDialogButtonBox QPushButton { min-width: 92px; }")
+                     .arg(palette.background,
+                          palette.text,
+                          palette.border,
+                          palette.secondaryText,
+                          palette.secondaryBackground,
+                          palette.buttonBackground,
+                          palette.buttonHover,
+                          palette.buttonPressed));
 }
 
 void SettingsDialog::loadCurrentSettings()
@@ -239,18 +297,22 @@ void SettingsDialog::loadCurrentSettings()
     const int historyLimit = AppSettings::normalizeHistoryMaxItems(
         settings.value(AppSettings::kHistoryMaxItems, AppSettings::kDefaultHistoryMaxItems)
             .toInt());
-    historyLimitSpin->setValue(historyLimit);
+    const QString historyLimitText = QString::number(historyLimit);
+    int comboIndex = historyLimitCombo->findText(historyLimitText);
+    if (comboIndex >= 0) {
+        historyLimitCombo->setCurrentIndex(comboIndex);
+    } else {
+        historyLimitCombo->setCurrentIndex(0);
+    }
     
     // Load dock strip settings.
     const int stripWidth = settings.value(AppSettings::kDockStripWidth, AppSettings::kDefaultDockStripWidth).toInt();
     const int stripHeight = settings.value(AppSettings::kDockStripHeight, AppSettings::kDefaultDockStripHeight).toInt();
     const int stripRadius = settings.value(AppSettings::kDockStripBorderRadius, AppSettings::kDefaultDockStripBorderRadius).toInt();
-    const int colorIndex = settings.value(AppSettings::kDockStripColorIndex, AppSettings::kDefaultDockStripColorIndex).toInt();
-    
+
     dockStripWidthSpin->setValue(stripWidth);
     dockStripHeightSpin->setValue(stripHeight);
     dockStripRadiusSpin->setValue(stripRadius);
-    dockStripColorCombo->setCurrentIndex(qBound(0, colorIndex, AppSettings::getDockStripPresetColors().size() - 1));
 
 #ifdef Q_OS_WIN
     QSettings bootSettings(QString::fromLatin1(kAutoStartRegPath), QSettings::NativeFormat);

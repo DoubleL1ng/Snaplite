@@ -26,7 +26,6 @@ public:
     int dockStripWidth() const;
     int dockStripHeight() const;
     int dockStripBorderRadius() const;
-    int dockStripColorIndex() const;
 
 protected:
     void accept() override;
@@ -34,18 +33,18 @@ protected:
 private:
     void buildUi();
     void loadCurrentSettings();
+    void applyTheme();
 
     QKeySequenceEdit *hotkeyEdit = nullptr;
     QLineEdit *savePathEdit = nullptr;
     QComboBox *saveFormatCombo = nullptr;
     QCheckBox *hideSidebarCheck = nullptr;
-    QSpinBox *historyLimitSpin = nullptr;
+    QComboBox *historyLimitCombo = nullptr;
     QPushButton *clearHistoryButton = nullptr;
     QCheckBox *autoStartCheck = nullptr;
     QSpinBox *dockStripWidthSpin = nullptr;
     QSpinBox *dockStripHeightSpin = nullptr;
     QSpinBox *dockStripRadiusSpin = nullptr;
-    QComboBox *dockStripColorCombo = nullptr;
 
     bool clearHistoryRequested = false;
 };

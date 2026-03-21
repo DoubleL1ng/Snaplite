@@ -13,13 +13,17 @@
 #include <QDesktopServices>
 #include <QEasingCurve>
 #include <QByteArrayView>
+#include <QFile>
 #include <QFileInfo>
 #include <QGraphicsDropShadowEffect>
 #include <QHBoxLayout>
 #include <QMessageBox>
 #include <QMenu>
+#include <QPainter>
+#include <QPainterPath>
 #include <QSignalBlocker>
 #include <QSettings>
+#include <QSvgRenderer>
 #include <QToolButton>
 #include <QUrl>
 #include <QWindow>
@@ -50,36 +54,92 @@ QRect resolveAvailableGeometry(const QWidget *widget)
     return QRect();
 }
 
-QString controlsStyleSheet()
+QString normalizeThemeModeValue(QString mode)
+{
+    mode = mode.trimmed().toLower();
+    if (mode != QStringLiteral("light")) {
+        return QStringLiteral("dark");
+    }
+    return mode;
+}
+
+QIcon loadThemeAwareSvgIcon(const QString &resourcePath, const QColor &color)
+{
+    QFile file(resourcePath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return QIcon(resourcePath);
+    }
+
+    QByteArray svgData = file.readAll();
+    svgData.replace("currentColor", color.name(QColor::HexRgb).toUtf8());
+
+    QSvgRenderer renderer(svgData);
+    if (!renderer.isValid()) {
+        return QIcon(resourcePath);
+    }
+
+    QIcon icon;
+    const QList<int> sizes = {14, 16, 18, 20, 24};
+    for (const int size : sizes) {
+        QPixmap pixmap(size, size);
+        pixmap.fill(Qt::transparent);
+        QPainter painter(&pixmap);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+        renderer.render(&painter, QRectF(0, 0, size, size));
+        painter.end();
+        icon.addPixmap(pixmap);
+    }
+
+    return icon;
+}
+
+QString controlsStyleSheet(const AppSettings::ThemePalette &palette)
 {
     return QStringLiteral(
-        "QPushButton { background-color: #3D3D3D; color: white; border: none; padding: 12px; border-radius: 5px; text-align: left; }"
-        "QPushButton:hover { background-color: #007AFF; }"
-        "QToolButton#topActionButton { background-color: #3D3D3D; color: white; border: none; border-radius: 12px; min-width: 24px; min-height: 24px; max-width: 24px; max-height: 24px; font-weight: 600; }"
-        "QToolButton#topActionButton:hover { background-color: #007AFF; }"
-        "QToolButton#topActionButton:checked { background-color: #007AFF; color: white; }"
-        "QToolButton#topActionButton:pressed { background-color: #005FCC; }"
-        "QToolButton#topActionButton:disabled { background-color: #303030; color: #777777; }"
+        "QPushButton { background-color: %1; color: %2; border: 1px solid %3; padding: 10px 12px; border-radius: 6px; text-align: center; font-family: 'Microsoft YaHei'; font-size: 14px; font-weight: 500; }"
+        "QPushButton#captureActionButton { padding: 12px 12px; font-size: 17px; font-weight: 600; text-align: center; }"
+        "QPushButton:hover { background-color: %4; color: #FFFFFF; }"
+        "QPushButton:pressed { background-color: %5; color: #FFFFFF; }"
+        "QToolButton#topActionButton { background-color: %1; color: %2; border: 1px solid %3; border-radius: 12px; min-width: 24px; min-height: 24px; max-width: 24px; max-height: 24px; font-family: 'Microsoft YaHei'; font-size: 13px; font-weight: 600; }"
+        "QToolButton#topActionButton:hover { background-color: %4; color: #FFFFFF; }"
+        "QToolButton#topActionButton:checked { background-color: %4; color: #FFFFFF; }"
+        "QToolButton#topActionButton:pressed { background-color: %5; color: #FFFFFF; }"
+        "QToolButton#topActionButton:disabled { background-color: %6; color: %7; }"
+        "QWidget#historyDivider { background-color: %3; border: none; border-radius: 2px; }"
         "QListWidget { background-color: transparent; border: none; outline: none; }"
-        "QListWidget::item { background-color: #383838; margin-bottom: 8px; border-radius: 6px; }"
-        "QListWidget::item:selected { background-color: #4A4A4A; border: 1px solid #00E5FF; }"
-    );
+        "QListWidget::item { background-color: %6; margin-bottom: 8px; border-radius: 6px; }"
+        "QListWidget::item:selected { background-color: %1; border: 1px solid %4; }"
+        "QLabel#historyTitleLabel { color: %2; font-family: 'YouYuan', 'Microsoft YaHei UI', 'Microsoft YaHei'; font-weight: 700; font-size: 20px; qproperty-alignment: AlignHCenter|AlignVCenter; }"
+        "QLabel#historyTimeLabel { background-color: %1; color: %4; border-radius: 4px; padding: 2px 6px; font-family: 'Microsoft YaHei'; font-weight: 700; font-size: 11px; }"
+        "QLabel#historyTextLabel { color: %7; font-family: 'Microsoft YaHei'; font-size: 13px; }")
+        .arg(palette.buttonBackground,
+             palette.text,
+             palette.border,
+             palette.buttonHover,
+             palette.buttonPressed,
+             palette.secondaryBackground,
+             palette.secondaryText);
 }
 
-QString expandedPanelStyleSheet()
+QString expandedPanelStyleSheet(const AppSettings::ThemePalette &palette)
 {
     return QStringLiteral(
-               "#centralWidget { background-color: #2D2D2D; border: 1.5px solid #404040; border-radius: 10px; }") +
-           controlsStyleSheet();
+               "#centralWidget { background-color: %1; border: 1.5px solid %2; border-radius: 10px; }")
+               .arg(palette.secondaryBackground, palette.border) +
+           controlsStyleSheet(palette);
 }
 
-QString dockStripStyleSheet(const QString &stripColor, int stripBorderRadius)
+QString dockStripStyleSheet(const AppSettings::ThemePalette &palette,
+                            const QString &stripColor,
+                            int stripBorderRadius)
 {
     return QStringLiteral(
-               "#centralWidget { background-color: %1; border: 1.5px solid #404040; border-radius: %2px; }")
+               "#centralWidget { background-color: %1; border: 1.5px solid %2; border-radius: %3px; }")
                .arg(stripColor)
+               .arg(palette.border)
                .arg(stripBorderRadius) +
-           controlsStyleSheet();
+           controlsStyleSheet(palette);
 }
 
 bool savePixmapToConfiguredPath(const QPixmap &pixmap, QString *savedPath, QString *errorText)
@@ -195,6 +255,8 @@ MainWindow::MainWindow(QWidget *parent)
         const QSettings settings = AppSettings::createSettings();
         sidebarPinned =
             settings.value(AppSettings::kSidebarPinned, AppSettings::kDefaultSidebarPinned).toBool();
+        themeMode = normalizeThemeModeValue(
+            settings.value(AppSettings::kThemeMode, AppSettings::kDefaultThemeMode).toString());
     }
     
     setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
@@ -220,7 +282,10 @@ MainWindow::MainWindow(QWidget *parent)
     animation = new QPropertyAnimation(this, "geometry", this);
     animation->setDuration(AppSettings::kSidebarAnimationDurationMs);
     animation->setEasingCurve(QEasingCurve::InOutCubic);
-    connect(animation, &QPropertyAnimation::finished, this, [this]() { updateDockMask(); });
+    connect(animation, &QPropertyAnimation::finished, this, [this]() {
+        setDockContentVisible(!isDocked);
+        updateDockMask();
+    });
     
     hoverRevealTimer = new QTimer(this);
     hoverRevealTimer->setSingleShot(true);
@@ -279,7 +344,7 @@ void MainWindow::setupUI()
 {
     centralWidget = new QWidget(this);
     centralWidget->setObjectName("centralWidget");
-    centralWidget->setStyleSheet(expandedPanelStyleSheet());
+    centralWidget->setStyleSheet(QString());
 
     auto *shadow = new QGraphicsDropShadowEffect(centralWidget);
     shadow->setBlurRadius(22);
@@ -295,37 +360,40 @@ void MainWindow::setupUI()
     topBarLayout->setSpacing(8);
     topBarLayout->addStretch();
 
-    QToolButton *githubButton = new QToolButton(this);
+    githubButton = new QToolButton(this);
     githubButton->setObjectName("topActionButton");
-    githubButton->setText(QStringLiteral("GH"));
-    githubButton->setToolTip(QStringLiteral("GitHub"));
+    githubButton->setIconSize(QSize(14, 14));
+    githubButton->setToolTip(QStringLiteral("\u6253\u5f00 GitHub"));
     githubButton->setCursor(Qt::PointingHandCursor);
     connect(githubButton, &QToolButton::clicked, this, &MainWindow::onOpenGitHub);
 
     themeToggleButton = new QToolButton(this);
     themeToggleButton->setObjectName("topActionButton");
-    themeToggleButton->setText(QStringLiteral("\u2600"));
-    themeToggleButton->setToolTip(QStringLiteral("Theme"));
+    themeToggleButton->setText(QString());
+    themeToggleButton->setIconSize(QSize(14, 14));
+    themeToggleButton->setToolTip(QStringLiteral("\u5207\u6362\u4e3b\u9898"));
     themeToggleButton->setCursor(Qt::PointingHandCursor);
     connect(themeToggleButton, &QToolButton::clicked, this, &MainWindow::onToggleTheme);
 
     pinButton = new QToolButton(this);
     pinButton->setObjectName("topActionButton");
     pinButton->setCheckable(true);
-    pinButton->setText(QString::fromUtf8("\xF0\x9F\x93\x8C"));
+    pinButton->setText(QString());
+    pinButton->setIcon(QIcon(QStringLiteral(":/icons/pin.svg")));
+    pinButton->setIconSize(QSize(14, 14));
     pinButton->setCursor(Qt::PointingHandCursor);
     connect(pinButton, &QToolButton::toggled, this, &MainWindow::onTogglePinned);
 
-    QToolButton *settingsButton = new QToolButton(this);
+    settingsButton = new QToolButton(this);
     settingsButton->setObjectName("topActionButton");
-    settingsButton->setText(QStringLiteral("\u2699"));
+    settingsButton->setIconSize(QSize(14, 14));
     settingsButton->setToolTip(QStringLiteral("\u8bbe\u7f6e"));
     settingsButton->setCursor(Qt::PointingHandCursor);
     connect(settingsButton, &QToolButton::clicked, this, &MainWindow::onOpenSettings);
 
-    QToolButton *exitButton = new QToolButton(this);
+    exitButton = new QToolButton(this);
     exitButton->setObjectName("topActionButton");
-    exitButton->setText(QStringLiteral("\u00d7"));
+    exitButton->setIconSize(QSize(14, 14));
     exitButton->setToolTip(QStringLiteral("\u9000\u51fa"));
     exitButton->setCursor(Qt::PointingHandCursor);
     connect(exitButton, &QToolButton::clicked, this, &MainWindow::onRequestExit);
@@ -340,6 +408,10 @@ void MainWindow::setupUI()
 
     // ÇøÓò½ØÍ¼°´Å¥
     QPushButton *btnRegion = new QPushButton(QStringLiteral("\u533a\u57df\u622a\u56fe"), this);
+    btnRegion->setObjectName("captureActionButton");
+    QFont captureButtonFont(QStringLiteral("Microsoft YaHei"), 17, QFont::DemiBold);
+    captureButtonFont.setLetterSpacing(QFont::AbsoluteSpacing, 0.8);
+    btnRegion->setFont(captureButtonFont);
     connect(btnRegion, &QPushButton::clicked, this, [this]() {
         const QSettings settings = AppSettings::createSettings();
         const bool hideSidebar =
@@ -362,6 +434,8 @@ void MainWindow::setupUI()
 
     // È«ÆÁ½ØÍ¼°´Å¥ (±Ø¶¨Òþ²Ø²à±ßÀ¸)
     QPushButton *btnFull = new QPushButton(QStringLiteral("\u5168\u5c4f\u622a\u56fe"), this);
+    btnFull->setObjectName("captureActionButton");
+    btnFull->setFont(captureButtonFont);
     connect(btnFull, &QPushButton::clicked, this, [this]() {
         if (!isDocked) {
             dockSidebar(false);
@@ -373,8 +447,15 @@ void MainWindow::setupUI()
     mainLayout->addWidget(btnFull);
 
     mainLayout->addSpacing(10);
-    QLabel *titleLabel = new QLabel(QStringLiteral("\u526a\u8d34\u677f\u5386\u53f2"), this); 
-    titleLabel->setStyleSheet("color: white; font-weight: bold;");
+    QWidget *historyDivider = new QWidget(this);
+    historyDivider->setObjectName("historyDivider");
+    historyDivider->setFixedSize(182, 3);
+    mainLayout->addWidget(historyDivider, 0, Qt::AlignHCenter);
+    mainLayout->addSpacing(4);
+
+    QLabel *titleLabel = new QLabel(QStringLiteral("\u526a\u8d34\u677f"), this);
+    titleLabel->setObjectName("historyTitleLabel");
+    titleLabel->setAlignment(Qt::AlignCenter);
     mainLayout->addWidget(titleLabel);
 
     historyList = new QListWidget(this);
@@ -392,6 +473,8 @@ void MainWindow::setupUI()
         addClipboardItem(pixmap);
         QTimer::singleShot(100, this, [this](){ ignoreClipboardChange = false; });
     });
+
+    applyTheme();
 }
 
 void MainWindow::onItemClicked(QListWidgetItem *item) { historyList->clearSelection(); }
@@ -521,7 +604,7 @@ void MainWindow::addClipboardItem(const QVariant &data)
 
     QString timeStr = QDateTime::currentDateTime().toString("HH:mm:ss");
     QLabel *timeLabel = new QLabel(timeStr);
-    timeLabel->setStyleSheet("background-color: #555555; color: #00E5FF; border-radius: 4px; padding: 2px 6px; font-weight: bold; font-size: 11px;");
+    timeLabel->setObjectName("historyTimeLabel");
     timeLabel->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Maximum);
     layout->addWidget(timeLabel);
 
@@ -534,7 +617,7 @@ void MainWindow::addClipboardItem(const QVariant &data)
     } else {
         QString text = data.toString();
         QLabel *textLabel = new QLabel(text.left(40).replace('\n', " ") + (text.length() > 40 ? "..." : ""));
-        textLabel->setStyleSheet("color: #E0E0E0; font-size: 13px;");
+        textLabel->setObjectName("historyTextLabel");
         layout->addWidget(textLabel);
         item->setSizeHint(QSize(normalWidth - 40, 70)); 
     }
@@ -597,7 +680,10 @@ void MainWindow::onSettingsUpdated()
     if (isDocked) {
         dockSidebar(false);
     } else if (centralWidget) {
-        centralWidget->setStyleSheet(expandedPanelStyleSheet());
+        const AppSettings::ThemePalette palette =
+            isLightTheme() ? AppSettings::getLightThemePalette()
+                           : AppSettings::getDarkThemePalette();
+        centralWidget->setStyleSheet(expandedPanelStyleSheet(palette));
     }
 }
 
@@ -772,10 +858,14 @@ void MainWindow::revealSidebarWithHold()
 
     clearMask();
     if (centralWidget) {
-        centralWidget->setStyleSheet(expandedPanelStyleSheet());
+        const AppSettings::ThemePalette palette =
+            isLightTheme() ? AppSettings::getLightThemePalette()
+                           : AppSettings::getDarkThemePalette();
+        centralWidget->setStyleSheet(expandedPanelStyleSheet(palette));
     }
     setGeometry(rect);
     isDocked = false;
+    setDockContentVisible(true);
     if (centralWidget && centralWidget->graphicsEffect()) {
         centralWidget->graphicsEffect()->setEnabled(true);
     }
@@ -786,6 +876,21 @@ void MainWindow::revealSidebarWithHold()
         trayRevealHoldTimer->start(AppSettings::kTrayRevealHoldMs);
     } else if (trayRevealHoldTimer) {
         trayRevealHoldTimer->stop();
+    }
+}
+
+void MainWindow::setDockContentVisible(bool visible)
+{
+    if (!centralWidget) {
+        return;
+    }
+
+    const QList<QWidget *> children =
+        centralWidget->findChildren<QWidget *>(QString(), Qt::FindDirectChildrenOnly);
+    for (QWidget *child : children) {
+        if (child) {
+            child->setVisible(visible);
+        }
     }
 }
 
@@ -804,8 +909,20 @@ QRect MainWindow::dockTriggerRect() const
 
 void MainWindow::updateDockMask()
 {
-    Q_UNUSED(isDocked);
-    clearMask();
+    if (!isDocked) {
+        clearMask();
+        return;
+    }
+
+    const QSettings settings = AppSettings::createSettings();
+    const int configuredRadius =
+        settings.value(AppSettings::kDockStripBorderRadius, AppSettings::kDefaultDockStripBorderRadius)
+            .toInt();
+    const int safeRadius = qBound(0, configuredRadius, qMin(width(), height()) / 2);
+
+    QPainterPath path;
+    path.addRoundedRect(QRectF(0, 0, width(), height()), safeRadius, safeRadius);
+    setMask(QRegion(path.toFillPolygon().toPolygon()));
 }
 
 void MainWindow::dockSidebar(bool animated)
@@ -821,19 +938,18 @@ void MainWindow::dockSidebar(bool animated)
     const int stripWidth = settings.value(AppSettings::kDockStripWidth, AppSettings::kDefaultDockStripWidth).toInt();
     const int stripHeight = settings.value(AppSettings::kDockStripHeight, AppSettings::kDefaultDockStripHeight).toInt();
     const int stripBorderRadius = settings.value(AppSettings::kDockStripBorderRadius, AppSettings::kDefaultDockStripBorderRadius).toInt();
-    const int colorIndex = settings.value(AppSettings::kDockStripColorIndex, AppSettings::kDefaultDockStripColorIndex).toInt();
-    
+
     dockTriggerWidth = qBound(AppSettings::kMinDockStripWidth, stripWidth, AppSettings::kMaxDockStripWidth);
     dockTriggerHeight = qBound(AppSettings::kMinDockStripHeight, stripHeight, AppSettings::kMaxDockStripHeight);
-    
-    const QStringList presetColors = AppSettings::getDockStripPresetColors();
-    const QString stripColor = (colorIndex >= 0 && colorIndex < presetColors.size()) 
-                                 ? presetColors.at(colorIndex)
-                                 : presetColors.first();
-    
+    const int safeStripRadius = qBound(0, stripBorderRadius, qMin(dockTriggerWidth, dockTriggerHeight) / 2);
+
+    const AppSettings::ThemePalette palette =
+        isLightTheme() ? AppSettings::getLightThemePalette() : AppSettings::getDarkThemePalette();
+    const QString stripColor = palette.buttonBackground;
+
     // Apply dock strip style (color and border radius)
     if (centralWidget) {
-        centralWidget->setStyleSheet(dockStripStyleSheet(stripColor, stripBorderRadius));
+        centralWidget->setStyleSheet(dockStripStyleSheet(palette, stripColor, safeStripRadius));
     }
 
     const int centerY = geometry().center().y();
@@ -860,6 +976,7 @@ void MainWindow::dockSidebar(bool animated)
     }
     setGeometry(targetRect);
     isDocked = true;
+    setDockContentVisible(false);
     if (centralWidget && centralWidget->graphicsEffect()) {
         centralWidget->graphicsEffect()->setEnabled(false);
     }
@@ -907,12 +1024,16 @@ void MainWindow::expandSidebar(bool force)
         animation->stop();
     }
     if (centralWidget) {
-        centralWidget->setStyleSheet(expandedPanelStyleSheet());
+        const AppSettings::ThemePalette palette =
+            isLightTheme() ? AppSettings::getLightThemePalette()
+                           : AppSettings::getDarkThemePalette();
+        centralWidget->setStyleSheet(expandedPanelStyleSheet(palette));
     }
 
     if (force) {
         setGeometry(rect);
         isDocked = false;
+        setDockContentVisible(true);
         if (centralWidget && centralWidget->graphicsEffect()) {
             centralWidget->graphicsEffect()->setEnabled(true);
         }
@@ -922,6 +1043,7 @@ void MainWindow::expandSidebar(bool force)
     if (!animation) {
         setGeometry(rect);
         isDocked = false;
+        setDockContentVisible(true);
         if (centralWidget && centralWidget->graphicsEffect()) {
             centralWidget->graphicsEffect()->setEnabled(true);
         }
@@ -932,6 +1054,7 @@ void MainWindow::expandSidebar(bool force)
     animation->setStartValue(geometry());
     animation->setEndValue(rect);
     isDocked = false;
+    setDockContentVisible(false);
     if (centralWidget && centralWidget->graphicsEffect()) {
         centralWidget->graphicsEffect()->setEnabled(true);
     }
@@ -971,5 +1094,93 @@ void MainWindow::applySuppressionState()
 
 void MainWindow::onToggleTheme()
 {
-    // Reserved for future theme implementation.
+    themeMode = isLightTheme() ? QStringLiteral("dark") : QStringLiteral("light");
+
+    QSettings settings = AppSettings::createSettings();
+    settings.setValue(AppSettings::kThemeMode, themeMode);
+    settings.sync();
+
+    applyTheme();
+}
+
+void MainWindow::applyTheme()
+{
+    themeMode = normalizeThemeModeValue(themeMode);
+    updateTopBarIcons();
+    updateThemeToggleUi();
+
+    if (!centralWidget) {
+        return;
+    }
+
+    const AppSettings::ThemePalette palette =
+        isLightTheme() ? AppSettings::getLightThemePalette() : AppSettings::getDarkThemePalette();
+
+    if (isDocked) {
+        const QSettings settings = AppSettings::createSettings();
+        const int stripBorderRadius = settings.value(AppSettings::kDockStripBorderRadius,
+                                                     AppSettings::kDefaultDockStripBorderRadius)
+                                        .toInt();
+        const int safeStripRadius = qBound(0, stripBorderRadius, qMin(width(), height()) / 2);
+        const QString stripColor = palette.buttonBackground;
+        centralWidget->setStyleSheet(dockStripStyleSheet(palette, stripColor, safeStripRadius));
+        updateDockMask();
+    } else {
+        centralWidget->setStyleSheet(expandedPanelStyleSheet(palette));
+    }
+}
+
+void MainWindow::updateTopBarIcons()
+{
+    const QColor iconColor = isLightTheme() ? QColor(QStringLiteral("#202020"))
+                                             : QColor(QStringLiteral("#F2F2F2"));
+
+    if (githubButton) {
+        githubButton->setIcon(loadThemeAwareSvgIcon(QStringLiteral(":/icons/github.svg"), iconColor));
+    }
+
+    if (pinButton) {
+        pinButton->setIcon(loadThemeAwareSvgIcon(QStringLiteral(":/icons/pin.svg"), iconColor));
+    }
+
+    if (settingsButton) {
+        settingsButton->setIcon(loadThemeAwareSvgIcon(QStringLiteral(":/icons/settings.svg"), iconColor));
+    }
+
+    if (exitButton) {
+        exitButton->setIcon(loadThemeAwareSvgIcon(QStringLiteral(":/icons/shutdown.svg"), iconColor));
+    }
+}
+
+bool MainWindow::isLightTheme() const
+{
+    return currentThemeMode() == QStringLiteral("light");
+}
+
+void MainWindow::updateThemeToggleUi()
+{
+    if (!themeToggleButton) {
+        return;
+    }
+
+    if (isLightTheme()) {
+        const QIcon icon = loadThemeAwareSvgIcon(QStringLiteral(":/icons/theme_light.svg"),
+                                                 QColor(QStringLiteral("#202020")));
+        themeToggleButton->setIcon(icon);
+        themeToggleButton->setText(icon.isNull() ? QStringLiteral("\u25CB") : QString());
+        themeToggleButton->setToolTip(
+            QStringLiteral("\u5f53\u524d\uff1a\u6d45\u8272\u6a21\u5f0f\uff08\u70b9\u51fb\u5207\u6362\u6df1\u8272\uff09"));
+    } else {
+        const QIcon icon = loadThemeAwareSvgIcon(QStringLiteral(":/icons/theme_dark.svg"),
+                                                 QColor(QStringLiteral("#F2F2F2")));
+        themeToggleButton->setIcon(icon);
+        themeToggleButton->setText(icon.isNull() ? QStringLiteral("\u263E") : QString());
+        themeToggleButton->setToolTip(
+            QStringLiteral("\u5f53\u524d\uff1a\u6df1\u8272\u6a21\u5f0f\uff08\u70b9\u51fb\u5207\u6362\u6d45\u8272\uff09"));
+    }
+}
+
+QString MainWindow::currentThemeMode() const
+{
+    return normalizeThemeModeValue(themeMode);
 }
