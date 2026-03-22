@@ -1,14 +1,14 @@
-# 剪贴桶（Words-Bin）- 轻量级截图与剪贴板工具
+# 侧影（Silo）- 轻量级截图与剪贴板工具
 
 <p align="center">
-   <img src="icons/applogo_512.png" alt="剪贴桶图标" width="120" />
+   <img src="icons/Silo_logo_github.png" alt="侧影图标" width="120" />
 </p>
 
 English (Coming Soon) | [中文](README.md)
 
 ## 项目简介
 
-剪贴桶（Words-Bin）是一个运行在 Windows 上的轻量级截图与剪贴板工具，提供高效、直观的截图体验。支持区域截图、全屏截图，集成系统托盘、热键、剪贴板历史等功能。
+侧影（Silo）是一个运行在 Windows 上的轻量级截图与剪贴板工具，提供高效、直观的截图体验。支持区域截图、全屏截图，集成系统托盘、热键、剪贴板历史等功能。
 
 ## 主要功能
 
@@ -107,7 +107,7 @@ Silo/
 - **语言** — C++17
 - **构建系统** — CMake
 - **平台** — Windows（使用系统 API 实现全局热键）
-- **产品名** — 剪贴桶（Words-Bin）
+- **产品名** — 侧影（Silo）
 
 ### 核心模块
 
